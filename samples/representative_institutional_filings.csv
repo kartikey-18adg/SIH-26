@@ -1,0 +1,5 @@
+aicte_permanent_id,institute_name,institute_type,state,district,case_reference,workflow_type,academic_period,current_stage,priority,internal_owner_name,target_date,notes
+1-419208111,Pune Institute of Advanced Technology,PRIVATE_SELF_FINANCED,Maharashtra,Pune,PIAT-EOA-2025,EXTENSION_OF_APPROVAL,2025-2026,DOCUMENT_REVIEW,HIGH,Dr. V. Sharma,2026-11-15,Annual Extension of Approval filing with Fire NOC and Building Occupancy certificate
+1-529011234,Sahyadri College of Engineering & Research,GOVT_AIDED,Karnataka,Mangaluru,SCER-INTAKE-01,INCREASE_IN_INTAKE,2025-2026,COMPLIANCE_CHECKS,MEDIUM,Prof. K. Rao,2026-11-20,Intake expansion in Artificial Intelligence & Data Science from 60 to 120 seats
+1-772109832,Indira National Technical Academy,PRIVATE_SELF_FINANCED,Tamil Nadu,Chennai,INTA-NEW-003,NEW_COURSE,2025-2026,INTERNAL_REVIEW,CRITICAL,Dean S. Subramanian,2026-11-28,New M.Tech in Cyber Security; syllabus approved by Academic Council
+1-998811220,Malformed Technical College,GOVERNMENT,Delhi,Central Delhi,MAL-ERR-999,EXTENSION_OF_APPROVAL,2025-2026,DRAFT,LOW,Admin User,invalid-date-format,Invalid row for testing error detection and rejection report
