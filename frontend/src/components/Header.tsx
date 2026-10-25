@@ -24,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
     { label: 'Alert Centre', href: '/alerts' },
     { label: 'Task Queue', href: '/tasks' },
     { label: 'Audit Trail', href: '/audit' },
+    { label: 'Readiness Simulator', href: '/readiness-simulator' },
   ];
 
   const isActive = (href: string) => {
