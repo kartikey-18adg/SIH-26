@@ -68,22 +68,37 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
   };
 
   useEffect(() => {
-    if (caseItem?.id) {
-      setDetail(caseItem);
-      fetchCaseDetail(caseItem.id)
-        .then(d => {
-          setDetail(d);
-          if (d.allowed_next_stages && d.allowed_next_stages.length > 0) {
-            setSelectedNextStage(d.allowed_next_stages[0]);
-          }
-        })
-        .catch(() => {});
-      loadCaseDocs(caseItem.id);
-      loadCaseCompliance(caseItem.id);
+    if (!caseItem?.id) {
+      // The parent closes this modal by clearing selectedCase. Clear the
+      // retained detail state too, otherwise the last case stays rendered.
+      setDetail(null);
+      setDocuments([]);
+      setComplianceResults([]);
+      setShowReviewPack(false);
+      return;
     }
+
+    // Start each newly selected case on its overview so footer actions such
+    // as "Inspect Compliance Checks" always produce an observable transition.
+    if (detail?.id !== caseItem.id) {
+      setActiveTab('overview');
+    }
+    setDetail(caseItem);
+    fetchCaseDetail(caseItem.id)
+      .then(d => {
+        setDetail(current => current?.id === caseItem.id ? d : current);
+        if (d.allowed_next_stages && d.allowed_next_stages.length > 0) {
+          setSelectedNextStage(d.allowed_next_stages[0]);
+        }
+      })
+      .catch(() => {});
+    loadCaseDocs(caseItem.id);
+    loadCaseCompliance(caseItem.id);
   }, [caseItem]);
 
-  if (!detail) return null;
+  // caseItem is the source of truth for whether the modal is open. detail can
+  // retain the previous case while React effects run, so guard on both.
+  if (!caseItem || !detail) return null;
 
   const handleStageTransition = async () => {
     if (!selectedNextStage) {
