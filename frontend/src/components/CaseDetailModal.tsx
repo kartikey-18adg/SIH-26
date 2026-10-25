@@ -76,6 +76,7 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
       setDetail(null);
       setDocuments([]);
       setComplianceResults([]);
+      setAiInsights(null);
       setShowReviewPack(false);
       return;
     }
@@ -84,6 +85,7 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
     // as "Inspect Compliance Checks" always produce an observable transition.
     if (detail?.id !== caseItem.id) {
       setActiveTab('overview');
+      setAiInsights(null);
     }
     setDetail(caseItem);
     fetchCaseDetail(caseItem.id)
