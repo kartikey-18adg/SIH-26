@@ -415,3 +415,21 @@ export async function updateTaskStatusApi(taskId: string, status: string, notes?
   if (!res.ok) await handleResponseError(res, `Failed to update task: HTTP ${res.status}`);
   return await res.json();
 }
+
+
+export async function fetchAiComplianceInsights(caseId: string): Promise<{
+  analysis_mode: 'AI_ASSISTED' | 'RULE_BASED_FALLBACK';
+  model: string | null;
+  summary: string;
+  priority_actions: Array<{ rule_key: string; title: string; status: string; action: string; reason: string; source: string | null; section: string | null }>;
+  uncertainty_notes: string[];
+  fallback_reason: string | null;
+}> {
+  const res = await fetch(`${API_BASE}/cases/${caseId}/compliance/ai-insights`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    cache: 'no-store'
+  });
+  if (!res.ok) await handleResponseError(res, `AI compliance insights failed: HTTP ${res.status}`);
+  return await res.json();
+}

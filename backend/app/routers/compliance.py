@@ -12,6 +12,7 @@ from ..models import (
 from .workspace import get_or_create_default_workspace
 from ..seed_data import seed_compliance_rules
 from ..permissions import get_current_role, check_role_permission
+from ..ai_compliance import generate_compliance_insights
 
 router = APIRouter(prefix="/api", tags=["Compliance Engine"])
 
@@ -506,3 +507,49 @@ def override_compliance_result(
     db.refresh(res)
 
     return format_result_item(res)
+
+
+@router.post("/cases/{case_id}/compliance/ai-insights")
+def get_ai_compliance_insights(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_role: str = Depends(get_current_role)
+):
+    """Summarize recorded compliance findings; never changes their deterministic status."""
+    check_role_permission(current_role, ["Compliance Officer", "Administrator"], "generating AI compliance insights")
+    ws = get_or_create_default_workspace(db)
+    case = db.query(ApprovalCase).filter(
+        ApprovalCase.id == case_id,
+        ApprovalCase.workspace_id == ws.id,
+        ApprovalCase.data_mode == ws.active_data_mode
+    ).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found in the active data mode.")
+
+    results = db.query(ComplianceResult).filter(
+        ComplianceResult.case_id == case.id
+    ).all()
+    if not results:
+        results = evaluate_case_compliance(case_id=case.id, db=db, current_role=current_role)
+        # evaluate_case_compliance returns API schemas; reload ORM results for the insight builder.
+        results = db.query(ComplianceResult).filter(
+            ComplianceResult.case_id == case.id
+        ).all()
+
+    insight = generate_compliance_insights(case, results)
+    db.add(AuditEvent(
+        workspace_id=ws.id,
+        actor_name=current_role,
+        actor_role=current_role.upper().replace(" ", "_"),
+        entity_type="CASE",
+        entity_id=case.id,
+        action="AI_COMPLIANCE_INSIGHTS_GENERATED" if insight["analysis_mode"] == "AI_ASSISTED" else "COMPLIANCE_TRIAGE_FALLBACK_GENERATED",
+        details_json={
+            "case_reference": case.case_reference,
+            "analysis_mode": insight["analysis_mode"],
+            "results_considered": len(results),
+            "model": insight.get("model"),
+        }
+    ))
+    db.commit()
+    return insight
