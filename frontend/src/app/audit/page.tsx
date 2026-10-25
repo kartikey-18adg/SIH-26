@@ -1,6 +1,7 @@
 'use client';
 
 import React, { FormEvent, useCallback, useEffect, useState } from 'react';
+import { AppShell } from '../../components/AppShell';
 import { AuditEvent, AuditFilters, AuditEventResponse, fetchAuditEvents } from '../../services/audit';
 
 const PAGE_SIZE = 25;
@@ -57,7 +58,8 @@ export default function AuditTrailPage() {
   const totalPages = Math.max(1, Math.ceil((data?.total || 0) / PAGE_SIZE));
 
   return (
-    <div className="space-y-5">
+    <AppShell>
+      <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between border-b border-[#E2E0D8] pb-4">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-[#1E3A8A]">
@@ -220,6 +222,7 @@ export default function AuditTrailPage() {
         Audit records shown here are read-only through this page. This does not by itself guarantee tamper-proof storage;
         production deployments should enforce database permissions, retention controls, and verified actor identity.
       </p>
-    </div>
+      </div>
+    </AppShell>
   );
 }
