@@ -147,3 +147,26 @@ See [`docs/hackathon-showcase-walkthrough.md`](docs/hackathon-showcase-walkthrou
 - **Institutional Dossier (CSV/XLSX/PDF):** `VERIFIED-AVAILABLE` (Primary operational ingestion path for institutional case tracking).
 #   S I H - 2 6  
  
+
+## AI-Assisted Compliance Triage (Optional)
+
+The compliance workflow keeps the existing deterministic APH rule engine as the source of each compliance status. The new **AI Triage** action summarizes already-recorded findings, suggests an order for reviewing them, and displays limitations. It cannot change a status, grant approval, or replace a human compliance officer.
+
+Without an AI provider configured, the endpoint returns a clearly labelled **rule-based fallback** rather than pretending that an AI model ran. To enable AI-assisted summaries, configure these variables in the terminal used to launch the backend (never put provider secrets in frontend code):
+
+**PowerShell**
+```powershell
+$env:AICLEAR_AI_API_KEY = "your-provider-api-key"
+$env:AICLEAR_AI_BASE_URL = "https://api.openai.com/v1"
+$env:AICLEAR_AI_MODEL = "gpt-4o-mini"
+python run_all.py
+```
+
+- `AICLEAR_AI_API_KEY` is required to call a provider.
+- `AICLEAR_AI_BASE_URL` defaults to the OpenAI API base URL and can be set to a compatible endpoint.
+- `AICLEAR_AI_MODEL` defaults to `gpt-4o-mini`.
+- AI insights are available only to the demo Compliance Officer and Administrator roles.
+- The service sends case workflow metadata and existing compliance findings to the configured provider. Do not use a third-party provider unless your institution has approved the data-sharing arrangement.
+- If the provider is missing, unavailable, or returns an unusable response, the UI labels the fallback and retains the deterministic findings.
+- Model-written statuses and citations are not trusted: statuses and source references shown in the UI are re-grounded in the stored rule results.
+- Current official AICTE guidance must be verified independently. The application is not an AICTE portal and does not issue statutory approvals.
