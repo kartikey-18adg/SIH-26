@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   transitionCaseStageApi, fetchCaseDetail, fetchCaseDocuments, 
   uploadCaseDocument, reviewDocumentApi, uploadNewVersionApi, 
-  getDocumentDownloadUrl, fetchCaseCompliance, evaluateCaseCompliance,
+  getDocumentDownloadUrl, fetchCaseCompliance, evaluateCaseCompliance, fetchAiComplianceInsights,
   overrideComplianceResultApi
 } from '../services/api';
 import { ReviewPackModal } from './ReviewPackModal';
@@ -23,6 +23,8 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
   const [documents, setDocuments] = useState<any[]>([]);
   const [complianceResults, setComplianceResults] = useState<any[]>([]);
   const [evaluatingCompliance, setEvaluatingCompliance] = useState<boolean>(false);
+  const [generatingAiInsights, setGeneratingAiInsights] = useState<boolean>(false);
+  const [aiInsights, setAiInsights] = useState<any | null>(null);
   const [selectedNextStage, setSelectedNextStage] = useState<string>('');
   const [transitionReason, setTransitionReason] = useState<string>('');
   const [transitioning, setTransitioning] = useState<boolean>(false);
@@ -219,6 +221,24 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
       setErrorNotice(err.message || 'Failed to evaluate compliance checks.');
     } finally {
       setEvaluatingCompliance(false);
+    }
+  };
+
+  const handleGenerateAiInsights = async () => {
+    if (!detail?.id) return;
+    setGeneratingAiInsights(true);
+    setErrorNotice(null);
+    try {
+      const insights = await fetchAiComplianceInsights(detail.id);
+      setAiInsights(insights);
+      setActionNotice(insights.analysis_mode === 'AI_ASSISTED'
+        ? 'AI-assisted compliance triage generated. Deterministic findings were not changed.'
+        : 'AI provider is not configured or unavailable; showing transparent rule-based triage instead.');
+      setTimeout(() => setActionNotice(null), 5000);
+    } catch (err: any) {
+      setErrorNotice(err.message || 'Unable to generate compliance triage.');
+    } finally {
+      setGeneratingAiInsights(false);
     }
   };
 
@@ -719,27 +739,82 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
 
           {activeTab === 'compliance' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-[#E2E0D8]">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-2 border-b border-[#E2E0D8]">
                 <div>
-                  <h4 className="font-bold text-xs text-[#1A1917]">Deterministic APH Compliance Engine</h4>
+                  <h4 className="font-bold text-xs text-[#1A1917]">Compliance Engine & AI Triage</h4>
                   <p className="text-[11px] text-[#5E5D57]">
-                    Evaluates attached evidence and case metadata against official AICTE Approval Process Handbook (2024–27) rules.
+                    Deterministic APH 2024–27 checks remain authoritative. AI summarizes existing findings and never changes compliance status.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={canPerform('canEvaluateCompliance') ? handleEvaluateCompliance : undefined}
-                  disabled={evaluatingCompliance || !canPerform('canEvaluateCompliance')}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
-                    canPerform('canEvaluateCompliance')
-                      ? 'bg-[#1E3A8A] text-white hover:bg-[#172554] cursor-pointer'
-                      : 'bg-[#E2E0D8] text-[#89877E] cursor-not-allowed'
-                  }`}
-                  title={canPerform('canEvaluateCompliance') ? undefined : "Compliance evaluation restricted to Compliance Officer or Administrator"}
-                >
-                  {evaluatingCompliance ? 'Evaluating Checks...' : '⚡ Re-evaluate Checks'}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={canPerform('canEvaluateCompliance') ? handleGenerateAiInsights : undefined}
+                    disabled={generatingAiInsights || !canPerform('canEvaluateCompliance')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded border transition-colors ${
+                      canPerform('canEvaluateCompliance')
+                        ? 'bg-[#F3E8FF] text-[#6B21A8] border-[#D8B4FE] hover:bg-[#E9D5FF]'
+                        : 'bg-[#E2E0D8] text-[#89877E] border-[#E2E0D8] cursor-not-allowed'
+                    }`}
+                    title={canPerform('canEvaluateCompliance') ? undefined : "AI triage restricted to Compliance Officer or Administrator"}
+                  >
+                    {generatingAiInsights ? 'Analyzing...' : '✦ AI Triage'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={canPerform('canEvaluateCompliance') ? handleEvaluateCompliance : undefined}
+                    disabled={evaluatingCompliance || !canPerform('canEvaluateCompliance')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+                      canPerform('canEvaluateCompliance')
+                        ? 'bg-[#1E3A8A] text-white hover:bg-[#172554] cursor-pointer'
+                        : 'bg-[#E2E0D8] text-[#89877E] cursor-not-allowed'
+                    }`}
+                    title={canPerform('canEvaluateCompliance') ? undefined : "Compliance evaluation restricted to Compliance Officer or Administrator"}
+                  >
+                    {evaluatingCompliance ? 'Evaluating Checks...' : '⚡ Re-evaluate Checks'}
+                  </button>
+                </div>
               </div>
+              {aiInsights && (
+                <div className="border border-[#D8B4FE] bg-[#FAF5FF] rounded p-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h5 className="text-xs font-bold text-[#581C87]">Compliance Triage Insights</h5>
+                    <span className="text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded border border-[#D8B4FE] bg-white text-[#6B21A8]">
+                      {aiInsights.analysis_mode === 'AI_ASSISTED' ? `AI assisted · ${aiInsights.model || 'configured model'}` : 'Rule-based fallback · no AI model'}
+                    </span>
+                  </div>
+                  <p className="text-xs leading-relaxed text-[#1A1917]">{aiInsights.summary}</p>
+                  {aiInsights.fallback_reason && (
+                    <p className="text-[10px] text-[#855304]">AI unavailable: {aiInsights.fallback_reason}</p>
+                  )}
+                  {aiInsights.priority_actions?.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#5E5D57]">Priority actions</p>
+                      {aiInsights.priority_actions.map((item: any, index: number) => (
+                        <div key={`${item.rule_key}-${index}`} className="bg-white border border-[#E9D5FF] rounded p-2.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[11px] font-bold text-[#1A1917]">{item.rule_key}: {item.title}</span>
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#FDF6E4] text-[#855304]">{String(item.status).replace(/_/g, ' ')}</span>
+                          </div>
+                          <p className="text-[11px] mt-1 text-[#1A1917]">{item.action}</p>
+                          <p className="text-[10px] mt-1 text-[#5E5D57]">{item.reason}</p>
+                          {(item.source || item.section) && <p className="text-[9px] mt-1 text-[#5E5D57]">Stored citation: {item.source || 'Source not recorded'} {item.section ? `· ${item.section}` : ''}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-[#5E5D57]">No findings are currently prioritized for action.</p>
+                  )}
+                  {aiInsights.uncertainty_notes?.length > 0 && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[#5E5D57] mb-1">Limitations & human verification</p>
+                      <ul className="list-disc pl-4 space-y-1 text-[10px] text-[#5E5D57]">
+                        {aiInsights.uncertainty_notes.map((note: string, index: number) => <li key={index}>{note}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-3">
                 {complianceResults.length === 0 ? (
