@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import engine, Base, SessionLocal
-from .routers import workspace, dashboard, ingestion, cases, documents, compliance, alerts, reports, tasks, audit
+from .routers import workspace, dashboard, ingestion, cases, documents, compliance, alerts, reports, tasks, audit, lineage
 from .routers.workspace import get_or_create_default_workspace
 
 # Create DB tables
@@ -33,6 +33,7 @@ app.include_router(alerts.router)
 app.include_router(reports.router)
 app.include_router(tasks.router)
 app.include_router(audit.router)
+app.include_router(lineage.router)
 
 @app.on_event("startup")
 def startup_event():
