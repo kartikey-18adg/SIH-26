@@ -23,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
     { label: 'Compliance Queue', href: '/compliance' },
     { label: 'Alert Centre', href: '/alerts' },
     { label: 'Task Queue', href: '/tasks' },
+    { label: 'Audit Trail', href: '/audit' },
   ];
 
   const isActive = (href: string) => {
@@ -64,7 +65,6 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
 
   return (
     <header className="border-b border-[#E2E0D8] bg-[#FFFFFF] sticky top-0 z-30">
-      {/* Top Advisory Banner */}
       <div className="bg-[#1A1917] text-[#E2E0D8] px-4 py-1 text-[11px] flex justify-between items-center">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-white tracking-wide">AICLEAR</span>
@@ -76,9 +76,7 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
         </div>
       </div>
 
-      {/* Main Navigation Bar */}
       <div className="px-6 py-2.5 flex items-center justify-between border-b border-[#F2F1EC]">
-        {/* Left: Brand & Context */}
         <div className="flex items-center gap-4">
           <div>
             <div className="flex items-center gap-2">
@@ -93,7 +91,6 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
           </div>
         </div>
 
-        {/* Center: Navigation Links */}
         <nav className="hidden md:flex items-center gap-1 text-xs">
           {navItems.map((item) => {
             const active = isActive(item.href);
@@ -101,7 +98,7 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-3 py-1 font-semibold transition-colors border-b-2 ${
+                className={`px-2.5 py-1 font-semibold transition-colors border-b-2 ${
                   active
                     ? 'text-[#1E3A8A] border-[#1E3A8A]'
                     : 'text-[#5E5D57] border-transparent hover:text-[#1A1917] hover:border-[#CAD6E2]'
@@ -113,10 +110,8 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
           })}
         </nav>
 
-        {/* Right: Role Switcher & Controls */}
         <div className="flex items-center gap-3">
-          {/* Demo Role Simulator Dropdown */}
-          <div 
+          <div
             className="flex items-center gap-1.5 border border-[#CCD7E2] px-2 py-1 rounded bg-[#F0F5FA] text-[11px]"
             title={`Active Demo Role: ${activeRole} - ${roleConfig.description}`}
           >
@@ -133,7 +128,6 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
             </select>
           </div>
 
-          {/* Import Data Button */}
           <button
             onClick={canImportData ? onOpenImport : undefined}
             disabled={!canImportData}
@@ -147,7 +141,6 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
             <span>📥 Import Data</span>
           </button>
 
-          {/* Data Sources Button */}
           <button
             onClick={canManageSettings ? onOpenSettings : undefined}
             disabled={!canManageSettings}
@@ -161,7 +154,6 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
             <span>⚙ Data Sources</span>
           </button>
 
-          {/* New Case Button */}
           <button
             onClick={canCreateCase ? onOpenNewCase : undefined}
             disabled={!canCreateCase}
@@ -177,7 +169,6 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
         </div>
       </div>
 
-      {/* Role Context Strip (Subtle banner indicating current role simulation) */}
       <div className="bg-[#F8FAFC] border-b border-[#E2E8F0] px-6 py-1 text-[11px] text-[#475569] flex justify-between items-center">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-[#1E3A8A]">Simulated Role:</span>
@@ -185,12 +176,9 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
           <span className="text-[#CBD5E1]">|</span>
           <span className="text-[#64748B] italic">{roleConfig.focusArea}</span>
         </div>
-        <div className="text-[10px] text-[#64748B]">
-          {roleConfig.description}
-        </div>
+        <div className="text-[10px] text-[#64748B]">{roleConfig.description}</div>
       </div>
 
-      {/* Mobile Navigation Bar */}
       <div className="flex md:hidden overflow-x-auto px-4 py-1.5 border-b border-[#E2E0D8] bg-[#FAF9F5] gap-2 text-xs">
         {navItems.map((item) => {
           const active = isActive(item.href);
