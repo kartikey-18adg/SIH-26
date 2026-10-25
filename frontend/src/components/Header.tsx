@@ -91,24 +91,6 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
           </div>
         </div>
 
-        <nav className="hidden md:flex items-center gap-1 text-xs">
-          {navItems.map((item) => {
-            const active = isActive(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`px-2.5 py-1 font-semibold transition-colors border-b-2 ${
-                  active
-                    ? 'text-[#1E3A8A] border-[#1E3A8A]'
-                    : 'text-[#5E5D57] border-transparent hover:text-[#1A1917] hover:border-[#CAD6E2]'
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
 
         <div className="flex items-center gap-3">
           <div
@@ -179,7 +161,7 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
         <div className="text-[10px] text-[#64748B]">{roleConfig.description}</div>
       </div>
 
-      <div className="flex md:hidden overflow-x-auto px-4 py-1.5 border-b border-[#E2E0D8] bg-[#FAF9F5] gap-2 text-xs">
+      <div className="flex overflow-x-auto px-4 sm:px-6 py-2 border-b border-[#E2E0D8] bg-[#FAF9F5] gap-2 text-xs">
         {navItems.map((item) => {
           const active = isActive(item.href);
           return (
