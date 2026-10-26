@@ -3,6 +3,7 @@
 import React, { FormEvent, useCallback, useEffect, useState } from 'react';
 import { AppShell } from '../../components/AppShell';
 import { AuditEvent, AuditFilters, AuditEventResponse, fetchAuditEvents } from '../../services/audit';
+import { AuditAnalyticsPanel } from './AuditAnalyticsPanel';
 
 const PAGE_SIZE = 25;
 const fieldClass = 'w-full rounded border border-[#D8D6CD] bg-white px-3 py-2 text-xs text-[#1A1917] outline-none focus:border-[#1E3A8A]';
@@ -89,6 +90,8 @@ export default function AuditTrailPage() {
           </div>
         ))}
       </div>
+
+      <AuditAnalyticsPanel />
 
       <form onSubmit={applyFilters} className="rounded border border-[#E2E0D8] bg-white p-4 shadow-xs">
         <div className="mb-3 flex items-center justify-between">
