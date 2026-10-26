@@ -104,11 +104,12 @@ export async function uploadAndPreviewCsv(file: File) {
   return await res.json();
 }
 
-export async function commitIngestionBatch(original_filename: string, file_sha256: string, records: any[]) {
+export async function commitIngestionBatch(preview_token: string, original_filename: string, file_sha256: string, records: any[]) {
   const res = await fetch(`${API_BASE}/ingestion/commit`, {
     method: 'POST',
     headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
+      preview_token,
       original_filename,
       file_sha256,
       records
