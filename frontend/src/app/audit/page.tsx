@@ -176,11 +176,11 @@ export default function AuditTrailPage() {
         ) : deadlineCases.length === 0 ? (
           <div className="p-6 text-center text-xs text-[#5E5D57]">No cases with target dates are available in the active data mode.</div>
         ) : (() => {
-          const dates = deadlineCases.map(item => new Date(item.target_date!).getTime());
+          const visibleCases = deadlineCases.slice(0, 15);
+          const dates = visibleCases.map(item => new Date(item.target_date!).getTime());
           const minDate = Math.min(...dates);
           const maxDate = Math.max(...dates);
           const span = Math.max(maxDate - minDate, 24 * 60 * 60 * 1000);
-          const visibleCases = deadlineCases.slice(0, 15);
           const ticks = Array.from({ length: 5 }, (_, index) => new Date(minDate + span * index / 4));
           const today = new Date();
           today.setHours(0, 0, 0, 0);
