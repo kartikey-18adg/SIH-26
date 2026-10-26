@@ -468,123 +468,125 @@ def commit_ingestion_batch(
     if duplicates:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"message": "Case references already exist in IMPORTED mode.", "duplicates": duplicates[:100]})
 
-    # Atomically claim the preview before writes. The conditional update prevents
-    # two concurrent requests from consuming the same token, including on SQLite.
-    claimed_at = utc_now()
-    claim = db.execute(
-        update(IngestionPreview)
-        .where(
-            IngestionPreview.id == preview_row.id,
-            IngestionPreview.consumed_at.is_(None),
-            IngestionPreview.expires_at > claimed_at,
-        )
-        .values(consumed_at=claimed_at)
-        # Let the database evaluate the expiry comparison. SQLite may return
-        # stored timestamps as naive datetimes while claimed_at is timezone-aware;
-        # ORM "evaluate" synchronization would compare them in Python and crash.
-        .execution_options(synchronize_session=False)
-    )
-    if claim.rowcount != 1:
-        db.rollback()
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This preview was expired or already claimed. Preview the CSV again.")
-
-    # 1. Create Ingestion Batch
-    batch_ref = f"BATCH-{datetime.now().strftime('%Y%m%d')}-{hashlib.md5(req.file_sha256.encode()).hexdigest()[:6].upper()}"
-    batch = IngestionBatch(
-        workspace_id=ws.id,
-        batch_reference=batch_ref,
-        original_filename=req.original_filename,
-        file_sha256=req.file_sha256,
-        total_records=len(req.records),
-        successful_records=len(req.records),
-        failed_records=0,
-        status="COMMITTED",
-        validation_report={
-            "committed_at": utc_now().isoformat(),
-            "records_count": len(req.records)
-        },
-        created_by="Institutional Coordinator"
-    )
-    db.add(batch)
-    db.flush()
-
-    # 2. Upsert Institutions and Insert Cases
-    committed_count = 0
-    for rec in req.records:
-        inst = db.query(Institution).filter(
-            Institution.workspace_id == ws.id,
-            Institution.aicte_permanent_id == rec.aicte_permanent_id,
-            Institution.data_mode == "IMPORTED"
-        ).first()
-
-        if not inst:
-            inst = Institution(
-                workspace_id=ws.id,
-                aicte_permanent_id=rec.aicte_permanent_id,
-                legal_name=rec.institute_name,
-                institution_type=rec.institute_type,
-                state=rec.state,
-                district=rec.district,
-                data_mode="IMPORTED",
-                provenance_batch_id=batch.id
-            )
-            db.add(inst)
-            db.flush()
-
-        case = ApprovalCase(
-            workspace_id=ws.id,
-            institution_id=inst.id,
-            case_reference=rec.case_reference,
-            workflow_type=rec.workflow_type,
-            academic_period=rec.academic_period,
-            current_stage=rec.current_stage,
-            status="IN_PROGRESS",
-            priority=rec.priority if rec.priority in ALLOWED_PRIORITIES else "MEDIUM",
-            internal_owner_name=rec.internal_owner_name,
-            target_date=date.fromisoformat(rec.target_date),
-            notes=rec.notes,
-            data_mode="IMPORTED",
-            created_by="Institutional File Ingestion"
-        )
-        db.add(case)
-        db.flush()
-
-        # Record Initial Stage History
-        hist = CaseStageHistory(
-            case_id=case.id,
-            from_stage="IMPORTED",
-            to_stage=rec.current_stage,
-            changed_by="Batch Ingestion Pipeline",
-            reason=f"Ingested from file '{req.original_filename}' with SHA-256 {req.file_sha256[:12]}..."
-        )
-        db.add(hist)
-        committed_count += 1
-
-    # 3. Switch workspace mode to IMPORTED
-    ws.active_data_mode = "IMPORTED"
-
-    # 4. Append Audit Event
-    audit = AuditEvent(
-        workspace_id=ws.id,
-        actor_name="Institutional Coordinator",
-        actor_role="COORDINATOR",
-        entity_type="INGESTION_BATCH",
-        entity_id=batch.id,
-        action="INSTITUTIONAL_BATCH_COMMITTED",
-        details_json={
-            "batch_reference": batch_ref,
-            "filename": req.original_filename,
-            "sha256": req.file_sha256,
-            "records_count": committed_count
-        }
-    )
-    db.add(audit)
     try:
+        # Atomically claim the preview before writes. The conditional update prevents
+        # two concurrent requests from consuming the same token, including on SQLite.
+        claimed_at = utc_now()
+        claim = db.execute(
+            update(IngestionPreview)
+            .where(
+                IngestionPreview.id == preview_row.id,
+                IngestionPreview.consumed_at.is_(None),
+                IngestionPreview.expires_at > claimed_at,
+            )
+            .values(consumed_at=claimed_at)
+            # Let the database evaluate the expiry comparison. SQLite may return
+            # stored timestamps as naive datetimes while claimed_at is timezone-aware;
+            # ORM "evaluate" synchronization would compare them in Python and crash.
+            .execution_options(synchronize_session=False)
+        )
+        if claim.rowcount != 1:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This preview was expired or already claimed. Preview the CSV again.")
+    
+        # 1. Create Ingestion Batch
+        batch_ref = f"BATCH-{datetime.now().strftime('%Y%m%d')}-{hashlib.md5(req.file_sha256.encode()).hexdigest()[:6].upper()}"
+        batch = IngestionBatch(
+            workspace_id=ws.id,
+            batch_reference=batch_ref,
+            original_filename=req.original_filename,
+            file_sha256=req.file_sha256,
+            total_records=len(req.records),
+            successful_records=len(req.records),
+            failed_records=0,
+            status="COMMITTED",
+            validation_report={
+                "committed_at": utc_now().isoformat(),
+                "records_count": len(req.records)
+            },
+            created_by="Institutional Coordinator"
+        )
+        db.add(batch)
+        db.flush()
+    
+        # 2. Upsert Institutions and Insert Cases
+        committed_count = 0
+        for rec in req.records:
+            inst = db.query(Institution).filter(
+                Institution.workspace_id == ws.id,
+                Institution.aicte_permanent_id == rec.aicte_permanent_id,
+                Institution.data_mode == "IMPORTED"
+            ).first()
+    
+            if not inst:
+                inst = Institution(
+                    workspace_id=ws.id,
+                    aicte_permanent_id=rec.aicte_permanent_id,
+                    legal_name=rec.institute_name,
+                    institution_type=rec.institute_type,
+                    state=rec.state,
+                    district=rec.district,
+                    data_mode="IMPORTED",
+                    provenance_batch_id=batch.id
+                )
+                db.add(inst)
+                db.flush()
+    
+            case = ApprovalCase(
+                workspace_id=ws.id,
+                institution_id=inst.id,
+                case_reference=rec.case_reference,
+                workflow_type=rec.workflow_type,
+                academic_period=rec.academic_period,
+                current_stage=rec.current_stage,
+                status="IN_PROGRESS",
+                priority=rec.priority if rec.priority in ALLOWED_PRIORITIES else "MEDIUM",
+                internal_owner_name=rec.internal_owner_name,
+                target_date=date.fromisoformat(rec.target_date),
+                notes=rec.notes,
+                data_mode="IMPORTED",
+                created_by="Institutional File Ingestion"
+            )
+            db.add(case)
+            db.flush()
+    
+            # Record Initial Stage History
+            hist = CaseStageHistory(
+                case_id=case.id,
+                from_stage="IMPORTED",
+                to_stage=rec.current_stage,
+                changed_by="Batch Ingestion Pipeline",
+                reason=f"Ingested from file '{req.original_filename}' with SHA-256 {req.file_sha256[:12]}..."
+            )
+            db.add(hist)
+            committed_count += 1
+    
+        # 3. Switch workspace mode to IMPORTED
+        ws.active_data_mode = "IMPORTED"
+    
+        # 4. Append Audit Event
+        audit = AuditEvent(
+            workspace_id=ws.id,
+            actor_name="Institutional Coordinator",
+            actor_role="COORDINATOR",
+            entity_type="INGESTION_BATCH",
+            entity_id=batch.id,
+            action="INSTITUTIONAL_BATCH_COMMITTED",
+            details_json={
+                "batch_reference": batch_ref,
+                "filename": req.original_filename,
+                "sha256": req.file_sha256,
+                "records_count": committed_count
+            }
+        )
+        db.add(audit)
         db.commit()
+    
     except Exception:
+        # Roll back the preview claim and every batch/case/history/audit write
+        # if any flush or the final commit fails. A retry can then start cleanly.
         db.rollback()
         raise
-
     return IngestionCommitResponse(
         success=True,
         batch_reference=batch_ref,
