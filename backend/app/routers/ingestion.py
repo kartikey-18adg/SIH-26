@@ -254,7 +254,7 @@ def parse_and_validate_csv(content: bytes, filename: str, ws_id: str, db: Sessio
         # Validate date
         try:
             date.fromisoformat(target_date_str)
-        except ValueError:
+        except (TypeError, ValueError):
             row_errors.append(RowErrorItem(
                 row_number=row_index,
                 field="target_date",
