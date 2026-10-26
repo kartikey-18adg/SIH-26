@@ -71,10 +71,20 @@ def run_phase_i_tests():
         print(f"  - Dashboard active data mode: {imported_summary.active_data_mode}")
         print(f"  - Total active cases in dashboard: {imported_summary.total_active_cases}")
         assert imported_summary.active_data_mode == "IMPORTED"
-        expected_active_imported = sum(1 for c in imported_cases if c.status != "COMPLETED")
+        # The dashboard intentionally excludes legacy IMPORTED rows that lack
+        # ingestion-batch provenance. Match its eligibility filter before counting
+        # active cases, rather than comparing against every case returned by list_cases.
+        dashboard_eligible_imported = [
+            c for c in imported_cases
+            if c.institution is not None
+            and c.institution.provenance_batch_id is not None
+        ]
+        expected_active_imported = sum(
+            1 for c in dashboard_eligible_imported if c.status != "COMPLETED"
+        )
         assert imported_summary.total_active_cases == expected_active_imported, (
             f"Dashboard active count mismatch: expected {expected_active_imported} "
-            f"non-completed imported cases, got {imported_summary.total_active_cases}"
+            f"active provenance-backed imported cases, got {imported_summary.total_active_cases}"
         )
 
         imported_alerts = list_alerts(db=db)
