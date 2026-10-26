@@ -1,13 +1,14 @@
 import csv
 import io
 import hashlib
-from datetime import datetime, date, timezone
+import secrets
+from datetime import datetime, date, timezone, timedelta
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import Workspace, IngestionBatch, Institution, ApprovalCase, CaseStageHistory, AuditEvent
+from ..models import Workspace, IngestionBatch, IngestionPreview, Institution, ApprovalCase, CaseStageHistory, AuditEvent
 from .workspace import get_or_create_default_workspace
 from ..permissions import get_current_role, check_role_permission
 
@@ -39,6 +40,8 @@ class RowErrorItem(BaseModel):
     raw_content: Dict[str, Any]
 
 class IngestionPreviewResponse(BaseModel):
+    preview_token: str
+    preview_expires_at: datetime
     file_name: str
     file_sha256: str
     total_rows: int
@@ -49,6 +52,7 @@ class IngestionPreviewResponse(BaseModel):
     can_commit: bool
 
 class IngestionCommitRequest(BaseModel):
+    preview_token: str
     original_filename: str
     file_sha256: str
     records: List[IngestionRecord]
@@ -305,7 +309,24 @@ async def preview_ingestion_file(
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="CSV exceeds the 5 MB upload limit.")
-    return parse_and_validate_csv(content, filename or "upload.csv", ws.id, db)
+    preview = parse_and_validate_csv(content, filename or "upload.csv", ws.id, db)
+    # The client receives a random bearer token; only its SHA-256 hash is persisted.
+    token = secrets.token_urlsafe(32)
+    expires_at = utc_now() + timedelta(minutes=15)
+    stored_records = [record.dict() for record in preview.valid_records]
+    db.add(IngestionPreview(
+        workspace_id=ws.id,
+        token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        original_filename=preview.file_name,
+        file_sha256=preview.file_sha256,
+        records_json=stored_records,
+        expires_at=expires_at,
+        consumed_at=None,
+    ))
+    db.commit()
+    preview.preview_token = token
+    preview.preview_expires_at = expires_at
+    return preview
 
 @router.post("/commit", response_model=IngestionCommitResponse)
 def commit_ingestion_batch(
@@ -322,6 +343,29 @@ def commit_ingestion_batch(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file_sha256 must be a 64-character SHA-256 hex digest.")
     if len(req.records) > 10000:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="A single batch cannot exceed 10,000 records.")
+    if not req.preview_token or len(req.preview_token) > 256:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A valid preview_token is required.")
+
+    ws = get_or_create_default_workspace(db)
+    token_hash = hashlib.sha256(req.preview_token.encode("utf-8")).hexdigest()
+    preview_row = db.query(IngestionPreview).filter(
+        IngestionPreview.workspace_id == ws.id,
+        IngestionPreview.token_hash == token_hash,
+    ).with_for_update().first()
+    if not preview_row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preview token not found. Upload and preview the CSV again.")
+    expires_at = preview_row.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= utc_now():
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="This CSV preview has expired. Upload and preview the file again.")
+    if preview_row.consumed_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This preview has already been committed. Preview the CSV again for a new import.")
+    if req.original_filename != preview_row.original_filename or req.file_sha256.lower() != preview_row.file_sha256:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Commit metadata does not match the reviewed CSV preview.")
+    submitted_records = [record.dict() for record in req.records]
+    if submitted_records != preview_row.records_json:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Submitted records differ from the validated preview. Preview the CSV again before committing.")
 
     # Revalidate every field at commit time; clients must not be able to bypass preview validation.
     errors = []
@@ -335,7 +379,6 @@ def commit_ingestion_batch(
     if errors:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"message": "Commit validation failed.", "errors": errors[:100]})
 
-    ws = get_or_create_default_workspace(db)
     existing_refs = {
         row[0] for row in db.query(ApprovalCase.case_reference).filter(
             ApprovalCase.workspace_id == ws.id,
@@ -417,6 +460,9 @@ def commit_ingestion_batch(
         )
         db.add(hist)
         committed_count += 1
+
+    # Consume the preview in the same transaction as the imported records.
+    preview_row.consumed_at = utc_now()
 
     # 3. Switch workspace mode to IMPORTED
     ws.active_data_mode = "IMPORTED"
