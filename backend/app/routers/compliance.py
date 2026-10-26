@@ -140,12 +140,10 @@ def get_compliance_queue(
     case_ids = [c.id for c in cases]
     case_map = {c.id: c for c in cases}
 
-    # If any active case has 0 compliance results, evaluate it so checks appear
-    for c in cases:
-        count = db.query(ComplianceResult).filter(ComplianceResult.case_id == c.id).count()
-        if count == 0:
-            evaluate_case_compliance(case_id=c.id, db=db)
-
+    # This is a read-only queue endpoint. Never trigger evaluations while listing:
+    # evaluating hundreds of imported cases here caused slow requests, duplicate audit
+    # events, and repeated alerts on every refresh. Use the explicit evaluate endpoint
+    # to create/update results for a case.
     results = db.query(ComplianceResult).filter(
         ComplianceResult.case_id.in_(case_ids)
     ).all()
@@ -426,17 +424,25 @@ def evaluate_case_compliance(
     # If critical deficiencies found, generate Alert
     deficiencies = [r for r in evaluated_results if r.status in ["NON_COMPLIANT", "EXPIRED_EVIDENCE", "MISSING_EVIDENCE"]]
     if deficiencies:
-        db.add(Alert(
-            workspace_id=ws.id,
-            case_id=case.id,
-            alert_key=f"ALERT-COMP-DEF-{case.id[:8]}",
-            category="COMPLIANCE_DEFICIENCY",
-            severity="HIGH",
-            title=f"Compliance Deficiencies Flagged: {len(deficiencies)} Items",
-            explanation=f"Deterministic evaluation against APH 2024-27 detected {len(deficiencies)} unresolved items requiring institutional action.",
-            status="OPEN",
-            assigned_to=case.internal_owner_name
-        ))
+        alert_key = f"ALERT-COMP-DEF-{case.id[:8]}"
+        existing_alert = db.query(Alert).filter(
+            Alert.workspace_id == ws.id,
+            Alert.case_id == case.id,
+            Alert.alert_key == alert_key,
+            Alert.status == "OPEN",
+        ).first()
+        if not existing_alert:
+            db.add(Alert(
+                workspace_id=ws.id,
+                case_id=case.id,
+                alert_key=alert_key,
+                category="COMPLIANCE_DEFICIENCY",
+                severity="HIGH",
+                title=f"Compliance Deficiencies Flagged: {len(deficiencies)} Items",
+                explanation=f"Deterministic evaluation against APH 2024-27 detected {len(deficiencies)} unresolved items requiring institutional action.",
+                status="OPEN",
+                assigned_to=case.internal_owner_name
+            ))
 
     # Audit event
     db.add(AuditEvent(
