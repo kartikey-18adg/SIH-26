@@ -11,6 +11,9 @@ export default function CompliancePage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [evaluationProgress, setEvaluationProgress] = useState<string | null>(null);
+  const [caseIdFilter, setCaseIdFilter] = useState<string | null>(() =>
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('case_id') : null
+  );
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -22,7 +25,7 @@ export default function CompliancePage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchComplianceQueueApi();
+      const data = await fetchComplianceQueueApi(caseIdFilter ? { case_id: caseIdFilter } : {});
       setQueueItems(data);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch compliance queue.');
@@ -40,7 +43,10 @@ export default function CompliancePage() {
     let evaluated = 0;
     const failures: string[] = [];
     try {
-      const cases = await fetchCases();
+      const allCases = await fetchCases();
+      const cases = caseIdFilter
+        ? allCases.filter((item: any) => item?.id === caseIdFilter)
+        : allCases;
       if (!Array.isArray(cases) || cases.length === 0) {
         setQueueItems([]);
         setEvaluationProgress(null);
@@ -61,7 +67,7 @@ export default function CompliancePage() {
       }
 
       setEvaluationProgress('Refreshing compliance queue…');
-      const data = await fetchComplianceQueueApi();
+      const data = await fetchComplianceQueueApi(caseIdFilter ? { case_id: caseIdFilter } : {});
       setQueueItems(Array.isArray(data) ? data : []);
       if (failures.length) {
         setError(`Evaluated ${evaluated} of ${cases.length} cases. ${failures.length} failed: ${failures.slice(0, 3).join('; ')}${failures.length > 3 ? '; …' : ''}`);
@@ -78,7 +84,7 @@ export default function CompliancePage() {
 
   useEffect(() => {
     loadComplianceQueue();
-  }, [activeMode]);
+  }, [activeMode, caseIdFilter]);
 
   const filteredItems = useMemo(() => {
     return queueItems.filter(item => {
@@ -159,6 +165,22 @@ export default function CompliancePage() {
           Change Mode / Configure Sources →
         </button>
       </div>
+
+      {caseIdFilter && (
+        <div className="mb-5 p-3 rounded border border-[#CAD6E2] bg-[#EDF2F7] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="text-xs text-[#1E3A8A]">
+            <strong>Case-specific compliance view</strong>
+            <span className="ml-2">Showing saved checks only for case ID {caseIdFilter}. Evaluating here will update only this case.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => { window.location.href = '/compliance'; }}
+            className="text-xs font-semibold text-[#1E3A8A] hover:underline shrink-0"
+          >
+            View all cases →
+          </button>
+        </div>
+      )}
 
       {/* KPI Cards Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
