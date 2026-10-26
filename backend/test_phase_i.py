@@ -71,7 +71,11 @@ def run_phase_i_tests():
         print(f"  - Dashboard active data mode: {imported_summary.active_data_mode}")
         print(f"  - Total active cases in dashboard: {imported_summary.total_active_cases}")
         assert imported_summary.active_data_mode == "IMPORTED"
-        assert imported_summary.total_active_cases == len(imported_cases)
+        expected_active_imported = sum(1 for c in imported_cases if c.status != "COMPLETED")
+        assert imported_summary.total_active_cases == expected_active_imported, (
+            f"Dashboard active count mismatch: expected {expected_active_imported} "
+            f"non-completed imported cases, got {imported_summary.total_active_cases}"
+        )
 
         imported_alerts = list_alerts(db=db)
         print(f"  - Alerts returned in IMPORTED mode: {len(imported_alerts)}")
