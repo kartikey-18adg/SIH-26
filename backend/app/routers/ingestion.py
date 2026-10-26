@@ -139,15 +139,56 @@ def parse_and_validate_file(content: bytes, filename: str, ws_id: str, db: Sessi
         from openpyxl import load_workbook
         workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
         worksheet = workbook.active
-        rows = worksheet.iter_rows(values_only=True)
-        header = next(rows, None)
-        if not header:
+        all_rows = worksheet.iter_rows(values_only=True)
+
+        # Ignore leading empty rows (common in formatted government reports).
+        header = None
+        for candidate in all_rows:
+            if any(value is not None and str(value).strip() for value in candidate):
+                header = candidate
+                break
+        if header is None:
+            workbook.close()
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="XLSX worksheet is empty.")
+
+        # Ignore blank-header columns; stop considering columns after five consecutive
+        # blank header cells so Excel's formatted-but-empty tail doesn't become CSV fields.
+        keep_indexes = []
+        consecutive_blank_columns = 0
+        for index, value in enumerate(header):
+            if value is not None and str(value).strip():
+                keep_indexes.append(index)
+                consecutive_blank_columns = 0
+            else:
+                consecutive_blank_columns += 1
+                if consecutive_blank_columns >= 5:
+                    break
+        if not keep_indexes:
+            workbook.close()
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="XLSX worksheet has no usable column headers.")
+
         buffer = io.StringIO(newline="")
         writer = csv.writer(buffer)
-        writer.writerow([str(value).strip() if value is not None else "" for value in header])
-        for row in rows:
-            writer.writerow(["" if value is None else (value.strftime("%Y-%m-%d") if hasattr(value, "strftime") else str(value)) for value in row])
+        writer.writerow([
+            str(header[index]).strip() if header[index] is not None else ""
+            for index in keep_indexes
+        ])
+
+        # Skip empty rows and stop after five consecutive empty rows, avoiding
+        # large formatted worksheet tails while still tolerating occasional gaps.
+        consecutive_blank_rows = 0
+        for row in all_rows:
+            if not any(value is not None and str(value).strip() for value in row):
+                consecutive_blank_rows += 1
+                if consecutive_blank_rows >= 5:
+                    break
+                continue
+            consecutive_blank_rows = 0
+            writer.writerow([
+                "" if index >= len(row) or row[index] is None else
+                (row[index].strftime("%Y-%m-%d") if hasattr(row[index], "strftime") else str(row[index]))
+                for index in keep_indexes
+            ])
         workbook.close()
         parsed = parse_and_validate_csv(buffer.getvalue().encode("utf-8"), filename.rsplit(".", 1)[0] + ".csv", ws_id, db)
         parsed.file_name = filename
