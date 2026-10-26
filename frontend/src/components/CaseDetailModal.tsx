@@ -63,10 +63,16 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
       .catch(() => {});
   };
 
-  const loadCaseCompliance = (cId: string) => {
-    fetchCaseCompliance(cId)
-      .then(res => setComplianceResults(res))
-      .catch(() => {});
+  const loadCaseCompliance = async (cId: string) => {
+    try {
+      const res = await fetchCaseCompliance(cId);
+      setComplianceResults(Array.isArray(res) ? res : []);
+      return Array.isArray(res) ? res.length : 0;
+    } catch (err: any) {
+      setComplianceResults([]);
+      setErrorNotice(err.message || 'Could not load compliance checks for this case.');
+      return 0;
+    }
   };
 
   useEffect(() => {
@@ -1058,7 +1064,13 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setActiveTab('compliance')}
+              onClick={async () => {
+                setActiveTab('compliance');
+                setErrorNotice(null);
+                if (complianceResults.length === 0 && detail?.id) {
+                  await loadCaseCompliance(detail.id);
+                }
+              }}
               className="px-3 py-1.5 text-xs font-medium text-white bg-[#1E3A8A] hover:bg-[#172554] rounded transition-colors"
             >
               Inspect Compliance Checks →
