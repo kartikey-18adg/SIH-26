@@ -438,13 +438,31 @@ def commit_ingestion_batch(
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at <= utc_now():
         raise HTTPException(status_code=status.HTTP_410_GONE, detail="This CSV preview has expired. Upload and preview the file again.")
-    if preview_row.consumed_at is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This preview has already been committed. Preview the CSV again for a new import.")
     if req.original_filename != preview_row.original_filename or req.file_sha256.lower() != preview_row.file_sha256:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Commit metadata does not match the reviewed CSV preview.")
     submitted_records = [record.dict() for record in req.records]
     if submitted_records != preview_row.records_json:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Submitted records differ from the validated preview. Preview the CSV again before committing.")
+
+    # Idempotent retry: if the server committed this exact preview but the client
+    # lost the response, return the prior result instead of reporting a misleading
+    # conflict. Only a committed batch matching this preview's metadata qualifies.
+    if preview_row.consumed_at is not None:
+        prior_batch = db.query(IngestionBatch).filter(
+            IngestionBatch.workspace_id == ws.id,
+            IngestionBatch.original_filename == preview_row.original_filename,
+            IngestionBatch.file_sha256 == preview_row.file_sha256,
+            IngestionBatch.status == "COMMITTED",
+        ).order_by(IngestionBatch.created_at.desc()).first()
+        if prior_batch and prior_batch.successful_records == len(preview_row.records_json):
+            return IngestionCommitResponse(
+                success=True,
+                batch_reference=prior_batch.batch_reference,
+                records_committed=prior_batch.successful_records,
+                active_data_mode="IMPORTED",
+                message=f"Import was already committed successfully ({prior_batch.successful_records} records). Returning the existing result."
+            )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This preview has already been consumed and no matching committed batch was found. Preview the file again.")
 
     # Revalidate every field at commit time; clients must not be able to bypass preview validation.
     errors = []
