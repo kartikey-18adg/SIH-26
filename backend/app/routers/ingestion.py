@@ -82,7 +82,7 @@ ALLOWED_WORKFLOWS = [
 
 ALLOWED_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 ALLOWED_INSTITUTE_TYPES = ["GOVERNMENT", "GOVT_AIDED", "PRIVATE_SELF_FINANCED", "DEEMED_UNIVERSITY"]
-ALLOWED_STAGES = ["DRAFT", "DOCUMENT_REVIEW", "COMPLIANCE_CHECK", "UNDER_REVIEW", "APPROVED", "REJECTED", "COMPLETED"]
+ALLOWED_STAGES = ["DRAFT", "DOCUMENT_REVIEW", "COMPLIANCE_CHECKS", "INTERNAL_REVIEW", "CORRECTIONS_REQUIRED", "READY_FOR_SUBMISSION", "COMPLETED", "APPROVED", "REJECTED"]
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 SHA256_PATTERN = __import__("re").compile(r"^[a-fA-F0-9]{64}$")
 
@@ -114,7 +114,7 @@ def _validate_record_values(rec: IngestionRecord, row_number: int = 0) -> List[s
         date.fromisoformat(rec.target_date)
     except (TypeError, ValueError):
         errors.append(f"{prefix}target_date must be a valid YYYY-MM-DD date.")
-    if not rec.academic_period or not __import__("re").fullmatch(r"\\d{4}-\\d{4}", rec.academic_period):
+    if not rec.academic_period or not __import__("re").fullmatch(r"\d{4}-\d{4}", rec.academic_period):
         errors.append(f"{prefix}academic_period must use YYYY-YYYY format.")
     return errors
 
