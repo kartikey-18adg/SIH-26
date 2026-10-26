@@ -1066,7 +1066,7 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
               type="button"
               onClick={() => {
                 onClose();
-                window.location.href = '/compliance';
+                window.location.href = `/compliance?case_id=${encodeURIComponent(detail.id)}`;
               }}
               className="px-3 py-1.5 text-xs font-medium text-white bg-[#1E3A8A] hover:bg-[#172554] rounded transition-colors"
             >
