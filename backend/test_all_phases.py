@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from backend.app.database import SessionLocal
 from backend.app.models import ApprovalCase, EvidenceDocument, AuditEvent, ComplianceResult
+from backend.app.seed_data import seed_demo_workspace_data
 from backend.app.routers.workspace import get_or_create_default_workspace
 from backend.app.schemas import DataModeSelectRequest
 from backend.app.routers.dashboard import get_dashboard_summary
@@ -20,7 +21,24 @@ def test_full_flow():
         
         # 1. Workspace & Dashboard
         ws = get_or_create_default_workspace(db)
-        print(f"[OK] Workspace loaded: ID={ws.id}, Mode={ws.active_data_mode}")
+        # This end-to-end test requires canonical demo fixtures regardless of
+        # the mode left active by a previous UI session. Seed only when missing,
+        # and never touch MANUAL/IMPORTED/CONNECTED records.
+        demo_case_count = db.query(ApprovalCase).filter(
+            ApprovalCase.workspace_id == ws.id,
+            ApprovalCase.data_mode == "DEMO"
+        ).count()
+        if demo_case_count == 0:
+            seed_demo_workspace_data(db, ws.id)
+            db.refresh(ws)
+        ws.active_data_mode = "DEMO"
+        db.commit()
+        db.refresh(ws)
+        demo_case_count = db.query(ApprovalCase).filter(
+            ApprovalCase.workspace_id == ws.id,
+            ApprovalCase.data_mode == "DEMO"
+        ).count()
+        print(f"[OK] Workspace loaded: ID={ws.id}, Mode={ws.active_data_mode}; demo cases={demo_case_count}")
         
         summary = get_dashboard_summary(db=db)
         print(f"[OK] Dashboard summary: Active Cases={summary.total_active_cases}, Mode={summary.active_data_mode}")
