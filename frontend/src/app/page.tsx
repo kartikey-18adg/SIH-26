@@ -4,6 +4,7 @@ import React from 'react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { AppShell } from '../components/AppShell';
 import { MetricCards } from '../components/MetricCards';
+import { OperationsInsights } from '../components/OperationsInsights';
 import { CasesTable } from '../components/CasesTable';
 import { AlertsQueue } from '../components/AlertsQueue';
 import { ActivityTimeline } from '../components/ActivityTimeline';
@@ -50,6 +51,9 @@ export default function WorkspacePage() {
 
       {/* Dynamic Metric Strip */}
       <MetricCards summary={summary} />
+
+      {/* Advanced, data-driven workflow and risk analytics */}
+      <OperationsInsights summary={summary} />
 
       {/* Primary Cases Table */}
       <CasesTable
