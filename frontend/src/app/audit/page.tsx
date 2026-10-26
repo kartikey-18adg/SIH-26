@@ -176,7 +176,7 @@ export default function AuditTrailPage() {
         ) : deadlineCases.length === 0 ? (
           <div className="p-6 text-center text-xs text-[#5E5D57]">No cases with target dates are available in the active data mode.</div>
         ) : (() => {
-          const visibleCases = deadlineCases.slice(0, 15);
+          const visibleCases = deadlineCases;
           const dates = visibleCases.map(item => new Date(item.target_date!).getTime());
           const minDate = Math.min(...dates);
           const maxDate = Math.max(...dates);
@@ -221,7 +221,7 @@ export default function AuditTrailPage() {
                   );
                 })}
               </div>
-              {deadlineCases.length > visibleCases.length && <p className="mt-3 text-[10px] text-[#77756C]">Showing the 15 earliest target dates. {deadlineCases.length - visibleCases.length} more cases are available but not shown here.</p>}
+              <p className="mt-3 text-[10px] text-[#77756C]">Showing all {visibleCases.length.toLocaleString()} cases with target dates in the active workspace.</p>
               <div className="mt-3 flex flex-wrap gap-3 border-t border-[#E2E0D8] pt-3 text-[10px] text-[#5E5D57]">
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-1 rounded-full bg-[#1E3A8A]" />Upcoming / normal priority</span>
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-1 rounded-full bg-[#C27803]" />High priority</span>
