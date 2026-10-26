@@ -9,6 +9,7 @@ interface DataSourceSettingsModalProps {
   currentMode: DataMode;
   onSwitchMode: (mode: DataMode) => Promise<void>;
   onClose: () => void;
+  onOpenImport: () => void;
   onRefreshDashboard: () => void;
 }
 
@@ -17,6 +18,7 @@ export const DataSourceSettingsModal: React.FC<DataSourceSettingsModalProps> = (
   currentMode,
   onSwitchMode,
   onClose,
+  onOpenImport,
   onRefreshDashboard
 }) => {
   const [sources, setSources] = useState<SourceRegistryItem[]>([]);
@@ -124,6 +126,21 @@ export const DataSourceSettingsModal: React.FC<DataSourceSettingsModalProps> = (
                 </button>
               ))}
             </div>
+
+            {targetMode === 'IMPORTED' && (
+              <div className="mt-4 p-3 bg-[#EDF2F7] border border-[#CAD6E2] rounded flex items-center justify-between">
+                <span className="text-xs text-[#2B3B4C]">
+                  Import an institutional CSV/XLSX file into the imported workspace.
+                </span>
+                <button
+                  type="button"
+                  onClick={onOpenImport}
+                  className="px-3 py-1.5 bg-[#1E3A8A] text-white text-xs font-medium rounded hover:bg-[#172554] transition-colors"
+                >
+                  📥 Import Data
+                </button>
+              </div>
+            )}
 
             {targetMode !== currentMode && (
               <div className="mt-4 p-3 bg-[#F0FDF4] border border-[#BBF7D0] rounded flex items-center justify-between">
