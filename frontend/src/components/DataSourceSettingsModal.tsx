@@ -24,7 +24,8 @@ export const DataSourceSettingsModal: React.FC<DataSourceSettingsModalProps> = (
   const [sources, setSources] = useState<SourceRegistryItem[]>([]);
   const [targetMode, setTargetMode] = useState<DataMode>(currentMode);
   const [loading, setLoading] = useState(false);
-  const [resetting, setResetting] = useState(false);\n  const [removingImported, setRemovingImported] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [removingImported, setRemovingImported] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
