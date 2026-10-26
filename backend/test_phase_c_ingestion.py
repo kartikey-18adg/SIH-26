@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from backend.app.database import Base
+from backend.app.models import Workspace, Institution, ApprovalCase
 from backend.app.routers.ingestion import (
     parse_and_validate_csv,
     IngestionRecord,
@@ -69,6 +70,102 @@ class IngestionValidationTests(unittest.TestCase):
             parse_and_validate_csv(b"content", "data.txt", "workspace-test", self.db)
         with self.assertRaises(HTTPException):
             parse_and_validate_csv(b"", "empty.csv", "workspace-test", self.db)
+
+    def test_malformed_rows_are_reported_not_committed(self):
+        csv_bytes = (
+            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\\n"
+            b"ID-004,Short Row,CASE-004,EXTENSION_OF_APPROVAL\\n"
+            b"ID-005,Extra Value,CASE-005,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator,unexpected\\n"
+            b"ID-006,Bad Date,CASE-006,EXTENSION_OF_APPROVAL,not-a-date,Coordinator\\n"
+        )
+        result = parse_and_validate_csv(csv_bytes, "malformed.csv", "workspace-test", self.db)
+        self.assertEqual(result.valid_count, 0)
+        self.assertFalse(result.can_commit)
+        self.assertTrue(any(error.field == "row" for error in result.row_errors))
+        self.assertTrue(any(error.field == "target_date" for error in result.row_errors))
+
+    def test_duplicate_case_references_within_file_are_rejected(self):
+        csv_bytes = (
+            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\\n"
+            b"ID-007,Institute A,DUP-CASE,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator\\n"
+            b"ID-008,Institute B,DUP-CASE,EXTENSION_OF_APPROVAL,2026-11-16,Coordinator\\n"
+        )
+        result = parse_and_validate_csv(csv_bytes, "duplicates.csv", "workspace-test", self.db)
+        self.assertEqual(result.valid_count, 1)
+        self.assertTrue(any("Duplicate case reference" in error.error_message for error in result.row_errors))
+        self.assertFalse(result.can_commit is False)
+
+    def test_existing_imported_case_reference_is_rejected(self):
+        ws = Workspace(name="Test Workspace", slug="default", active_data_mode="IMPORTED")
+        self.db.add(ws)
+        self.db.flush()
+        inst = Institution(
+            workspace_id=ws.id,
+            legal_name="Existing Institute",
+            institution_type="PRIVATE_SELF_FINANCED",
+            state="Uttarakhand",
+            district="Dehradun",
+            data_mode="IMPORTED",
+        )
+        self.db.add(inst)
+        self.db.flush()
+        self.db.add(ApprovalCase(
+            workspace_id=ws.id,
+            institution_id=inst.id,
+            case_reference="ALREADY-IMPORTED",
+            workflow_type="EXTENSION_OF_APPROVAL",
+            academic_period="2025-2026",
+            current_stage="DOCUMENT_REVIEW",
+            status="IN_PROGRESS",
+            priority="MEDIUM",
+            internal_owner_name="Coordinator",
+            target_date=__import__("datetime").date(2026, 11, 15),
+            data_mode="IMPORTED",
+        ))
+        self.db.commit()
+        csv_bytes = (
+            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\\n"
+            b"ID-009,New Institute,ALREADY-IMPORTED,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator\\n"
+        )
+        result = parse_and_validate_csv(csv_bytes, "existing.csv", ws.id, self.db)
+        self.assertEqual(result.valid_count, 0)
+        self.assertTrue(any("already exists in the IMPORTED workspace" in error.error_message for error in result.row_errors))
+
+    def test_demo_reference_does_not_block_imported_mode_preview(self):
+        ws = Workspace(name="Test Workspace", slug="default", active_data_mode="DEMO")
+        self.db.add(ws)
+        self.db.flush()
+        inst = Institution(
+            workspace_id=ws.id,
+            legal_name="Demo Institute",
+            institution_type="PRIVATE_SELF_FINANCED",
+            state="Uttarakhand",
+            district="Dehradun",
+            data_mode="DEMO",
+        )
+        self.db.add(inst)
+        self.db.flush()
+        self.db.add(ApprovalCase(
+            workspace_id=ws.id,
+            institution_id=inst.id,
+            case_reference="SHARED-REFERENCE",
+            workflow_type="EXTENSION_OF_APPROVAL",
+            academic_period="2025-2026",
+            current_stage="DOCUMENT_REVIEW",
+            status="IN_PROGRESS",
+            priority="MEDIUM",
+            internal_owner_name="Demo Coordinator",
+            target_date=__import__("datetime").date(2026, 11, 15),
+            data_mode="DEMO",
+        ))
+        self.db.commit()
+        csv_bytes = (
+            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\\n"
+            b"ID-010,Imported Institute,SHARED-REFERENCE,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator\\n"
+        )
+        result = parse_and_validate_csv(csv_bytes, "mode-isolation.csv", ws.id, self.db)
+        self.assertEqual(result.valid_count, 1)
+        self.assertEqual(result.error_count, 0)
 
     def test_commit_record_validation_rejects_invalid_values(self):
         record = IngestionRecord(
