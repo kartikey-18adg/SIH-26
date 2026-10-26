@@ -1,4 +1,4 @@
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,6 +12,11 @@ from .workspace import get_or_create_default_workspace
 
 router = APIRouter(prefix="/api/audit", tags=["Audit Trail"])
 READ_ROLES = ["Administrator", "Compliance Officer", "Reviewer"]
+
+
+def _authorized_workspace(db: Session, current_role: str):
+    check_role_permission(current_role, READ_ROLES, "viewing the audit trail")
+    return get_or_create_default_workspace(db)
 
 
 @router.get("/events")
@@ -28,8 +33,7 @@ def list_audit_events(
     current_role: str = Depends(get_current_role),
 ):
     """Read-only, workspace-scoped audit log for authorized review roles."""
-    check_role_permission(current_role, READ_ROLES, "viewing the audit trail")
-    ws = get_or_create_default_workspace(db)
+    ws = _authorized_workspace(db, current_role)
     query = db.query(AuditEvent).filter(AuditEvent.workspace_id == ws.id)
 
     if search and search.strip():
@@ -70,7 +74,6 @@ def list_audit_events(
     actor_count = db.query(func.count(func.distinct(AuditEvent.actor_name))).filter(
         AuditEvent.workspace_id == ws.id
     ).scalar() or 0
-
     events = query.order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
@@ -94,4 +97,48 @@ def list_audit_events(
             "today_events": today_count,
             "unique_actors": actor_count,
         },
+    }
+
+
+@router.get("/analytics")
+def audit_analytics(
+    days: int = Query(30, ge=7, le=90),
+    db: Session = Depends(get_db),
+    current_role: str = Depends(get_current_role),
+):
+    """Workspace-scoped daily counts and action distribution for the audit dashboard."""
+    ws = _authorized_workspace(db, current_role)
+    today = datetime.now(timezone.utc).date()
+    start_day = today - timedelta(days=days - 1)
+    start_at = datetime.combine(start_day, time.min)
+    end_at = datetime.combine(today + timedelta(days=1), time.min)
+
+    rows = db.query(
+        func.date(AuditEvent.created_at).label("day"),
+        func.count(AuditEvent.id).label("count"),
+    ).filter(
+        AuditEvent.workspace_id == ws.id,
+        AuditEvent.created_at >= start_at,
+        AuditEvent.created_at < end_at,
+    ).group_by(func.date(AuditEvent.created_at)).all()
+    daily_counts = {str(row.day): int(row.count) for row in rows}
+    daily = [{
+        "date": (start_day + timedelta(days=i)).isoformat(),
+        "count": daily_counts.get((start_day + timedelta(days=i)).isoformat(), 0),
+    } for i in range(days)]
+
+    action_rows = db.query(
+        AuditEvent.action,
+        func.count(AuditEvent.id).label("count"),
+    ).filter(
+        AuditEvent.workspace_id == ws.id,
+        AuditEvent.created_at >= start_at,
+        AuditEvent.created_at < end_at,
+    ).group_by(AuditEvent.action).order_by(func.count(AuditEvent.id).desc()).limit(6).all()
+
+    return {
+        "days": days,
+        "total_events": sum(item["count"] for item in daily),
+        "daily": daily,
+        "actions": [{"action": row.action, "count": int(row.count)} for row in action_rows],
     }
