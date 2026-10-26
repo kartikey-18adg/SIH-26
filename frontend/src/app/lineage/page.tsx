@@ -41,17 +41,25 @@ const TYPE_STYLE: Record<string, { title: string; color: string; badge: string }
   compliance_result: { title: 'Compliance result', color: '#B45309', badge: 'bg-amber-50 text-amber-800 border-amber-200' },
   compliance_rule: { title: 'Compliance rule', color: '#7C3AED', badge: 'bg-violet-50 text-violet-800 border-violet-200' },
   audit_event: { title: 'Audit event', color: '#475569', badge: 'bg-slate-50 text-slate-700 border-slate-200' },
+  institution: { title: 'Institution', color: '#0369A1', badge: 'bg-sky-50 text-sky-800 border-sky-200' },
+  stage_history: { title: 'Stage history', color: '#64748B', badge: 'bg-slate-50 text-slate-700 border-slate-200' },
+  task: { title: 'Task', color: '#BE123C', badge: 'bg-rose-50 text-rose-800 border-rose-200' },
+  alert: { title: 'Alert', color: '#DC2626', badge: 'bg-red-50 text-red-800 border-red-200' },
 };
 
 const COLUMN_BY_TYPE: Record<string, number> = {
+  institution: 0,
   case: 0,
   evidence_document: 1,
   compliance_result: 1,
+  stage_history: 1,
   document_version: 2,
   compliance_rule: 2,
+  task: 2,
+  alert: 2,
   audit_event: 3,
 };
-const COLUMN_TITLES = ['Case', 'Evidence & checks', 'Versions & rules', 'Audit trail'];
+const COLUMN_TITLES = ['Institution & case', 'Evidence, checks & stages', 'Versions, rules & actions', 'Audit trail'];
 const CARD_W = 220;
 const CARD_H = 116;
 const X_GAP = 70;
@@ -252,14 +260,16 @@ export default function EvidenceLineagePage() {
                   const source = graphLayout.positions[edge.source];
                   const target = graphLayout.positions[edge.target];
                   if (!source || !target) return null;
-                  const x1 = source.x + CARD_W;
+                  const sourceIsLeft = source.x <= target.x;
+                  const x1 = source.x + (sourceIsLeft ? CARD_W : 0);
                   const y1 = source.y + CARD_H / 2;
-                  const x2 = target.x;
+                  const x2 = target.x + (sourceIsLeft ? 0 : CARD_W);
                   const y2 = target.y + CARD_H / 2;
-                  const curve = Math.max(28, (x2 - x1) / 2);
+                  const curve = Math.max(24, Math.abs(x2 - x1) / 2);
+                  const bend = sourceIsLeft ? 1 : -1;
                   return (
                     <g key={edge.id}>
-                      <path d={`M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}`} fill="none" stroke="#94A3B8" strokeWidth="1.5" markerEnd="url(#lineage-arrow)" />
+                      <path d={`M ${x1} ${y1} C ${x1 + curve * bend} ${y1}, ${x2 - curve * bend} ${y2}, ${x2} ${y2}`} fill="none" stroke={edge.type === 'raised_alert' ? '#DC2626' : '#94A3B8'} strokeWidth={edge.type === 'raised_alert' ? 2 : 1.5} opacity="0.8" markerEnd="url(#lineage-arrow)" />
                     </g>
                   );
                 })}
