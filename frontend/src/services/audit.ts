@@ -14,11 +14,7 @@ export interface AuditEventResponse {
   total: number;
   page: number;
   page_size: number;
-  stats: {
-    total_events: number;
-    today_events: number;
-    unique_actors: number;
-  };
+  stats: { total_events: number; today_events: number; unique_actors: number };
 }
 
 export interface AuditFilters {
@@ -32,28 +28,45 @@ export interface AuditFilters {
   page_size?: number;
 }
 
+export interface AuditAnalytics {
+  days: number;
+  total_events: number;
+  daily: { date: string; count: number }[];
+  actions: { action: string; count: number }[];
+}
+
+function auditRequestHeaders() {
+  const role = typeof window !== 'undefined'
+    ? localStorage.getItem('aiclear_active_role') || 'Institution Coordinator'
+    : 'Institution Coordinator';
+  return { 'X-AIClear-Role': role };
+}
+
+async function auditJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, { cache: 'no-store', headers: auditRequestHeaders() });
+  if (!response.ok) {
+    let message = `Unable to load audit data (HTTP ${response.status}).`;
+    try {
+      const payload = await response.json();
+      if (payload?.detail) message = payload.detail;
+    } catch { /* Keep fallback. */ }
+    throw new Error(message);
+  }
+  return response.json();
+}
+
+function auditApiBase() {
+  return process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
+}
+
 export async function fetchAuditEvents(filters: AuditFilters = {}): Promise<AuditEventResponse> {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
     if (value !== undefined && value !== '') params.set(key, String(value));
   });
-  const role = typeof window !== 'undefined'
-    ? localStorage.getItem('aiclear_active_role') || 'Institution Coordinator'
-    : 'Institution Coordinator';
-  const response = await fetch(`${apiBase}/audit/events?${params.toString()}`, {
-    cache: 'no-store',
-    headers: { 'X-AIClear-Role': role },
-  });
-  if (!response.ok) {
-    let message = `Unable to load audit events (HTTP ${response.status}).`;
-    try {
-      const payload = await response.json();
-      if (payload?.detail) message = payload.detail;
-    } catch {
-      // Keep the HTTP fallback message.
-    }
-    throw new Error(message);
-  }
-  return response.json();
+  return auditJson<AuditEventResponse>(`${auditApiBase()}/audit/events?${params.toString()}`);
+}
+
+export async function fetchAuditAnalytics(days = 30): Promise<AuditAnalytics> {
+  return auditJson<AuditAnalytics>(`${auditApiBase()}/audit/analytics?days=${days}`);
 }
