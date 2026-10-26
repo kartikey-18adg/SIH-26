@@ -65,6 +65,20 @@ class IngestionBatch(Base):
 
     institutions = relationship("Institution", back_populates="ingestion_batch")
 
+class IngestionPreview(Base):
+    __tablename__ = "ingestion_previews"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    original_filename = Column(String(255), nullable=False)
+    file_sha256 = Column(String(64), nullable=False)
+    records_json = Column(JSON, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    consumed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
 class Institution(Base):
     __tablename__ = "institutions"
 
