@@ -96,3 +96,34 @@ def test_search_filters_audit_events(client_with_audit_data):
     )
     assert response.status_code == 200
     assert response.json()["total"] == 1
+
+
+
+def test_analytics_returns_daily_counts_and_only_workspace_events(client_with_audit_data):
+    response = client_with_audit_data.get(
+        "/api/audit/analytics?days=30",
+        headers={"X-AIClear-Role": "Compliance Officer"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["days"] == 30
+    assert len(payload["daily"]) == 30
+    assert payload["total_events"] == 1
+    assert sum(item["count"] for item in payload["daily"]) == 1
+    assert all(item["action"] != "PRIVATE_EVENT" for item in payload["actions"])
+
+
+def test_coordinator_cannot_read_audit_analytics(client_with_audit_data):
+    response = client_with_audit_data.get(
+        "/api/audit/analytics",
+        headers={"X-AIClear-Role": "Institution Coordinator"},
+    )
+    assert response.status_code == 403
+
+
+def test_analytics_rejects_out_of_range_days(client_with_audit_data):
+    response = client_with_audit_data.get(
+        "/api/audit/analytics?days=120",
+        headers={"X-AIClear-Role": "Administrator"},
+    )
+    assert response.status_code == 422
