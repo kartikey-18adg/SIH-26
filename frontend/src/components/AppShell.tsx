@@ -63,6 +63,10 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
         currentMode={activeMode}
         onSwitchMode={handleSwitchMode}
         onClose={() => setShowSettingsModal(false)}
+        onOpenImport={() => {
+          setShowSettingsModal(false);
+          setShowImportModal(true);
+        }}
         onRefreshDashboard={loadData}
       />
 
