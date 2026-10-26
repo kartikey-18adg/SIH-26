@@ -34,8 +34,12 @@ def _mode_scoped_audit_query(db: Session, ws):
         )
         # Keep genuine imported case activity, batch ingestion records, and workspace
         # mode changes. Synthetic demo simulator events and demo-case activity are excluded.
+        synthetic_flag = func.coalesce(
+            AuditEvent.details_json["synthetic_demo_event"].as_boolean(), False
+        )
         query = query.filter(
             (AuditEvent.actor_name != "Demo Activity Simulator"),
+            synthetic_flag.is_(False),
             (
                 ((AuditEvent.entity_type == "CASE") & AuditEvent.entity_id.in_(imported_case_ids))
                 | ((AuditEvent.entity_type == "INGESTION_BATCH") & AuditEvent.entity_id.in_(imported_batch_ids))
@@ -44,8 +48,12 @@ def _mode_scoped_audit_query(db: Session, ws):
         )
     elif mode in ("MANUAL", "CONNECTED"):
         # Do not leak demo/import activity into modes whose records are isolated.
+        synthetic_flag = func.coalesce(
+            AuditEvent.details_json["synthetic_demo_event"].as_boolean(), False
+        )
         query = query.filter(
             AuditEvent.actor_name != "Demo Activity Simulator",
+            synthetic_flag.is_(False),
             AuditEvent.entity_type == "WORKSPACE",
         )
     else:
