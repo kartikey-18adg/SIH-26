@@ -123,6 +123,7 @@ def get_compliance_queue(
     severity: Optional[str] = None,
     rule_source: Optional[str] = None,
     search: Optional[str] = None,
+    case_id: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     ws = get_or_create_default_workspace(db)
@@ -138,6 +139,13 @@ def get_compliance_queue(
 
     if not cases:
         return []
+
+    # When opened from a case, scope the queue to that case only. Restrict the
+    # requested ID to the active workspace/data-mode cases above.
+    if case_id:
+        cases = [c for c in cases if c.id == case_id]
+        if not cases:
+            return []
 
     case_ids = [c.id for c in cases]
     case_map = {c.id: c for c in cases}
