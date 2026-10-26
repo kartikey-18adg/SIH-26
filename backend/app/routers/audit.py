@@ -43,7 +43,7 @@ def _mode_scoped_audit_query(db: Session, ws):
             (
                 ((AuditEvent.entity_type == "CASE") & AuditEvent.entity_id.in_(imported_case_ids))
                 | ((AuditEvent.entity_type == "INGESTION_BATCH") & AuditEvent.entity_id.in_(imported_batch_ids))
-                | (AuditEvent.entity_type == "WORKSPACE")
+                | ((AuditEvent.entity_type == "WORKSPACE") & (AuditEvent.action == "IMPORTED_DATA_REMOVED"))
             ),
         )
     elif mode in ("MANUAL", "CONNECTED"):
