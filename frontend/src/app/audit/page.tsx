@@ -23,6 +23,7 @@ function prettyAction(action: string) {
 export default function AuditTrailPage() {
   const [data, setData] = useState<AuditEventResponse | null>(null);
   const [deadlineCases, setDeadlineCases] = useState<DeadlineCase[]>([]);
+  const [expandedDeadlineMonths, setExpandedDeadlineMonths] = useState<Set<string>>(new Set());
   const [deadlineLoading, setDeadlineLoading] = useState(true);
   const [deadlineError, setDeadlineError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -176,52 +177,95 @@ export default function AuditTrailPage() {
         ) : deadlineCases.length === 0 ? (
           <div className="p-6 text-center text-xs text-[#5E5D57]">No cases with target dates are available in the active data mode.</div>
         ) : (() => {
-          const visibleCases = deadlineCases;
-          const dates = visibleCases.map(item => new Date(item.target_date!).getTime());
-          const minDate = Math.min(...dates);
-          const maxDate = Math.max(...dates);
-          const span = Math.max(maxDate - minDate, 24 * 60 * 60 * 1000);
-          const ticks = Array.from({ length: 5 }, (_, index) => new Date(minDate + span * index / 4));
           const today = new Date();
           today.setHours(0, 0, 0, 0);
+          const groups = deadlineCases.reduce<Record<string, DeadlineCase[]>>((acc, item) => {
+            const date = new Date(item.target_date!);
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            (acc[key] ??= []).push(item);
+            return acc;
+          }, {});
+          const months = Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+          const toggleMonth = (month: string) => setExpandedDeadlineMonths(previous => {
+            const next = new Set(previous);
+            if (next.has(month)) next.delete(month);
+            else next.add(month);
+            return next;
+          });
           return (
-            <div className="p-4">
-              <div className="mb-2 grid grid-cols-[minmax(120px,1.2fr)_minmax(220px,2fr)] gap-3 text-[10px] font-semibold text-[#77756C]">
-                <span>Case / target date</span>
-                <div className="relative h-6 border-b border-[#D8D6CD]">
-                  {ticks.map((tick, index) => (
-                    <span key={index} className="absolute bottom-1 -translate-x-1/2 whitespace-nowrap" style={{ left: `${index * 25}%` }}>
-                      {tick.toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                    </span>
-                  ))}
+            <div className="p-3 sm:p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] text-[#5E5D57]">Choose a month to inspect individual case deadlines.</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setExpandedDeadlineMonths(new Set(months.map(([month]) => month)))} className="rounded border border-[#D8D6CD] px-2.5 py-1.5 text-[10px] font-semibold hover:bg-[#F2F1EC]">Expand all</button>
+                  <button type="button" onClick={() => setExpandedDeadlineMonths(new Set())} className="rounded border border-[#D8D6CD] px-2.5 py-1.5 text-[10px] font-semibold hover:bg-[#F2F1EC]">Collapse all</button>
                 </div>
               </div>
-              <div className="divide-y divide-[#F0EFE9]">
-                {visibleCases.map(item => {
-                  const target = new Date(item.target_date!);
-                  const position = ((target.getTime() - minDate) / span) * 100;
-                  const daysLeft = Math.ceil((new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime() - today.getTime()) / 86400000);
-                  const overdue = daysLeft < 0 && !['COMPLETED', 'APPROVED', 'REJECTED'].includes((item.status || '').toUpperCase());
-                  const priority = (item.priority || '').toUpperCase();
-                  const markerColor = overdue ? '#B42318' : priority === 'CRITICAL' ? '#B42318' : priority === 'HIGH' ? '#C27803' : '#1E3A8A';
+              <div className="divide-y divide-[#E2E0D8] rounded border border-[#E2E0D8]">
+                {months.map(([month, items]) => {
+                  const expanded = expandedDeadlineMonths.has(month);
+                  const [year, monthNumber] = month.split('-').map(Number);
+                  const monthLabel = new Date(year, monthNumber - 1, 1).toLocaleDateString([], { month: 'long', year: 'numeric' });
+                  const monthDates = items.map(item => new Date(item.target_date!).getTime());
+                  const minDate = Math.min(...monthDates);
+                  const maxDate = Math.max(...monthDates);
+                  const span = Math.max(maxDate - minDate, 24 * 60 * 60 * 1000);
+                  const ticks = Array.from({ length: 5 }, (_, index) => new Date(minDate + span * index / 4));
                   return (
-                    <div key={item.id} className="grid grid-cols-[minmax(120px,1.2fr)_minmax(220px,2fr)] items-center gap-3 py-2.5">
-                      <div className="min-w-0">
-                        <p className="truncate text-[11px] font-semibold text-[#1A1917]" title={item.case_reference}>{item.case_reference}</p>
-                        <p className="truncate text-[10px] text-[#77756C]" title={item.institution_name}>{item.institution_name || 'Institution unavailable'}</p>
-                        <p className="mt-0.5 text-[10px] text-[#5E5D57]">{target.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })} · {daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? 'Due today' : `${daysLeft}d left`}</p>
-                      </div>
-                      <div className="relative h-8 rounded bg-[#F7F7F5]">
-                        <div className="absolute inset-y-0 border-l border-dashed border-[#C6C4BA]" style={{ left: '50%' }} aria-hidden="true" />
-                        <div className="absolute inset-y-0 flex items-center" style={{ left: `${Math.max(0, Math.min(100, position))}%` }}>
-                          <span className="h-4 w-1 rounded-full" style={{ backgroundColor: markerColor }} title={`Target date: ${target.toLocaleDateString()}`} />
+                    <section key={month}>
+                      <button type="button" onClick={() => toggleMonth(month)} aria-expanded={expanded} className="flex w-full items-center justify-between gap-3 bg-[#FBFBF9] px-3 py-3 text-left hover:bg-[#F2F1EC] sm:px-4">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="text-xs text-[#1E3A8A]" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                          <span className="truncate text-xs font-semibold text-[#1A1917]">{monthLabel}</span>
+                        </span>
+                        <span className="shrink-0 text-[10px] text-[#5E5D57]">{items.length} {items.length === 1 ? 'case' : 'cases'}</span>
+                      </button>
+                      {expanded && (
+                        <div className="border-t border-[#E2E0D8] p-3 sm:p-4">
+                          <div className="mb-2 grid grid-cols-[minmax(110px,1.2fr)_minmax(150px,2fr)] gap-2 text-[10px] font-semibold text-[#77756C] sm:grid-cols-[minmax(180px,1.2fr)_minmax(220px,2fr)] sm:gap-3">
+                            <span>Case / target date</span>
+                            <div className="relative h-6 border-b border-[#D8D6CD]">
+                              {ticks.map((tick, index) => (
+                                <span key={index} className="absolute bottom-1 -translate-x-1/2 whitespace-nowrap" style={{ left: `${index * 25}%` }}>
+                                  {tick.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="divide-y divide-[#F0EFE9]">
+                            {items.map(item => {
+                              const target = new Date(item.target_date!);
+                              const position = ((target.getTime() - minDate) / span) * 100;
+                              const daysLeft = Math.ceil((new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime() - today.getTime()) / 86400000);
+                              const status = (item.status || item.current_stage || '').toUpperCase();
+                              const isClosed = ['COMPLETED', 'APPROVED', 'REJECTED'].some(value => status.includes(value));
+                              const overdue = daysLeft < 0 && !isClosed;
+                              const priority = (item.priority || '').toUpperCase();
+                              const markerColor = overdue ? '#B42318' : priority === 'CRITICAL' ? '#B42318' : priority === 'HIGH' ? '#C27803' : '#1E3A8A';
+                              return (
+                                <div key={item.id} className="grid grid-cols-[minmax(110px,1.2fr)_minmax(150px,2fr)] items-center gap-2 py-2.5 sm:grid-cols-[minmax(180px,1.2fr)_minmax(220px,2fr)] sm:gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-[10px] font-semibold text-[#1A1917] sm:text-[11px]" title={item.case_reference}>{item.case_reference}</p>
+                                    <p className="truncate text-[10px] text-[#77756C]" title={item.institution_name}>{item.institution_name || 'Institution unavailable'}</p>
+                                    <p className="mt-0.5 text-[10px] text-[#5E5D57]">{target.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })} · {isClosed ? 'Closed' : daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? 'Due today' : `${daysLeft}d left`}</p>
+                                  </div>
+                                  <div className="relative h-8 rounded bg-[#F7F7F5]">
+                                    <div className="absolute inset-y-0 border-l border-dashed border-[#C6C4BA]" style={{ left: '50%' }} aria-hidden="true" />
+                                    <div className="absolute inset-y-0 flex items-center" style={{ left: `${Math.max(0, Math.min(100, position))}%` }}>
+                                      <span className="h-4 w-1 rounded-full" style={{ backgroundColor: markerColor }} title={`Target date: ${target.toLocaleDateString()}`} />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    </div>
+                      )}
+                    </section>
                   );
                 })}
               </div>
-              <p className="mt-3 text-[10px] text-[#77756C]">Showing all {visibleCases.length.toLocaleString()} cases with target dates in the active workspace.</p>
+              <p className="mt-3 text-[10px] text-[#77756C]">All {deadlineCases.length.toLocaleString()} cases with target dates are grouped by target month. Expand a month to view its deadline markers.</p>
               <div className="mt-3 flex flex-wrap gap-3 border-t border-[#E2E0D8] pt-3 text-[10px] text-[#5E5D57]">
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-1 rounded-full bg-[#1E3A8A]" />Upcoming / normal priority</span>
                 <span className="flex items-center gap-1.5"><span className="h-2.5 w-1 rounded-full bg-[#C27803]" />High priority</span>
