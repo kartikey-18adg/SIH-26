@@ -106,7 +106,7 @@ def get_case_lineage(
     stage_history = (
         db.query(CaseStageHistory)
         .filter(CaseStageHistory.case_id == case.id)
-        .order_by(CaseStageHistory.created_at.asc())
+        .order_by(CaseStageHistory.changed_at.asc())
         .all()
     )
     for history in stage_history:
@@ -119,7 +119,7 @@ def get_case_lineage(
             to_stage=history.to_stage,
             changed_by=history.changed_by,
             reason=history.reason,
-            created_at=history.created_at,
+            changed_at=history.changed_at,
         )
         _edge(edges, case_node_id, history_node_id, "has_stage_history")
 
