@@ -85,6 +85,7 @@ export const ImportDataModal: React.FC<ImportDataModalProps> = ({ isOpen, onClos
     setErrorMsg(null);
     try {
       const res = await commitIngestionBatch(
+        previewData.preview_token,
         previewData.file_name,
         previewData.file_sha256,
         previewData.valid_records
