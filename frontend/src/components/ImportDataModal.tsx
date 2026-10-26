@@ -112,7 +112,7 @@ export const ImportDataModal: React.FC<ImportDataModalProps> = ({ isOpen, onClos
               Institutional Data Ingestion Workstation
             </h2>
             <p className="text-xs text-[#5E5D57]">
-              Upload institutional CSV schedules. Previews columns, reports rejected rows, and records SHA-256 provenance before database commit.
+              Upload institutional CSV or Excel schedules. Previews columns, reports rejected rows, and records SHA-256 provenance before database commit.
             </p>
           </div>
           <button
@@ -127,10 +127,10 @@ export const ImportDataModal: React.FC<ImportDataModalProps> = ({ isOpen, onClos
         <div className="px-6 py-3 bg-[#FAF9F5] border-b border-[#E2E0D8] flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <label className="px-3 py-1.5 text-xs font-medium text-[#1A1917] bg-[#FFFFFF] border border-[#C6C4BA] hover:bg-[#F2F1EC] rounded cursor-pointer transition-colors">
-              <span>Choose CSV File</span>
+              <span>Choose CSV / XLSX File</span>
               <input
                 type="file"
-                accept=".csv"
+                accept=".csv,.xlsx"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -164,7 +164,7 @@ export const ImportDataModal: React.FC<ImportDataModalProps> = ({ isOpen, onClos
           {loading && (
             <div className="py-12 text-center text-xs text-[#5E5D57]">
               <div className="inline-block animate-pulse font-medium">
-                Parsing CSV schema, calculating SHA-256 checksum & validating rows...
+                Parsing spreadsheet, calculating SHA-256 checksum & validating rows...
               </div>
             </div>
           )}
@@ -185,7 +185,7 @@ export const ImportDataModal: React.FC<ImportDataModalProps> = ({ isOpen, onClos
             <div className="border border-dashed border-[#C6C4BA] rounded-lg p-10 text-center bg-[#FAF9F5]">
               <div className="text-sm font-semibold text-[#1A1917]">No file selected for preview</div>
               <p className="text-xs text-[#5E5D57] mt-1 max-w-md mx-auto">
-                Upload your institutional CSV or click <strong>&quot;Load Representative Sample File&quot;</strong> to inspect row-level error validation and commit genuine institutional cases into the database.
+                Upload your institutional CSV/XLSX or click <strong>&quot;Load Representative Sample File&quot;</strong> to inspect row-level error validation and commit genuine institutional cases into the database.
               </p>
             </div>
           )}
