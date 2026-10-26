@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import update
 from ..database import get_db
 from ..models import Workspace, IngestionBatch, IngestionPreview, Institution, ApprovalCase, CaseStageHistory, AuditEvent
 from .workspace import get_or_create_default_workspace
@@ -389,6 +390,22 @@ def commit_ingestion_batch(
     if duplicates:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"message": "Case references already exist in IMPORTED mode.", "duplicates": duplicates[:100]})
 
+    # Atomically claim the preview before writes. The conditional update prevents
+    # two concurrent requests from consuming the same token, including on SQLite.
+    claimed_at = utc_now()
+    claim = db.execute(
+        update(IngestionPreview)
+        .where(
+            IngestionPreview.id == preview_row.id,
+            IngestionPreview.consumed_at.is_(None),
+            IngestionPreview.expires_at > claimed_at,
+        )
+        .values(consumed_at=claimed_at)
+    )
+    if claim.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This preview was expired or already claimed. Preview the CSV again.")
+
     # 1. Create Ingestion Batch
     batch_ref = f"BATCH-{datetime.now().strftime('%Y%m%d')}-{hashlib.md5(req.file_sha256.encode()).hexdigest()[:6].upper()}"
     batch = IngestionBatch(
@@ -460,9 +477,6 @@ def commit_ingestion_batch(
         )
         db.add(hist)
         committed_count += 1
-
-    # Consume the preview in the same transaction as the imported records.
-    preview_row.consumed_at = utc_now()
 
     # 3. Switch workspace mode to IMPORTED
     ws.active_data_mode = "IMPORTED"
