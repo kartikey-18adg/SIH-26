@@ -229,8 +229,8 @@ export const ReviewPackModal: React.FC<ReviewPackModalProps> = ({ caseId, isOpen
                   III. AICTE APH 2024–2027 Compliance Audit
                 </h3>
                 <div className="space-y-2">
-                  {pack.compliance_checklist.map((c: any) => (
-                    <div key={c.rule_key} className="p-2.5 border border-[#E2E0D8] rounded text-xs bg-[#FFFFFF]">
+                  {pack.compliance_checklist.map((c: any, index: number) => (
+                    <div key={`${c.rule_key}-${index}`} className="p-2.5 border border-[#E2E0D8] rounded text-xs bg-[#FFFFFF]">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <strong className="text-[#1A1917]">{c.rule_key}: {c.rule_title}</strong>
