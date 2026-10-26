@@ -21,7 +21,7 @@ def _authorized_workspace(db: Session, current_role: str):
 
 def _mode_scoped_audit_query(db: Session, ws):
     """Return only events relevant to the currently selected workspace data mode."""
-    query = _mode_scoped_audit_query(db, ws)
+    query = db.query(AuditEvent).filter(AuditEvent.workspace_id == ws.id)
     mode = (ws.active_data_mode or "DEMO").upper()
 
     if mode == "IMPORTED":
@@ -69,7 +69,7 @@ def list_audit_events(
 ):
     """Read-only, workspace-scoped audit log for authorized review roles."""
     ws = _authorized_workspace(db, current_role)
-    query = db.query(AuditEvent).filter(AuditEvent.workspace_id == ws.id)
+    query = _mode_scoped_audit_query(db, ws)
 
     if search and search.strip():
         term = f"%{search.strip()}%"
