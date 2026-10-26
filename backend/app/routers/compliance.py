@@ -223,8 +223,10 @@ def get_compliance_queue(
 
 @router.get("/cases/{case_id}/compliance", response_model=List[ComplianceResultItem])
 def get_case_compliance_results(case_id: str, db: Session = Depends(get_db)):
-    seed_compliance_rules(db)
-    results = db.query(ComplianceResult).filter(
+    # Read saved results only; rule seeding belongs to bootstrap/evaluation, not page loads.
+    results = db.query(ComplianceResult).options(
+        joinedload(ComplianceResult.rule)
+    ).filter(
         ComplianceResult.case_id == case_id
     ).all()
     return [format_result_item(r) for r in results]
