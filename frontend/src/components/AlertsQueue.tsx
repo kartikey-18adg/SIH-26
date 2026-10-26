@@ -68,6 +68,24 @@ export const AlertsQueue: React.FC<AlertsQueueProps> = ({
     loadAlerts();
   }, [statusTab, severityFilter, initialAlerts]);
 
+  // Load cases independently from the alert list. The chart needs case target
+  // dates and priorities; without this request it will remain permanently empty.
+  useEffect(() => {
+    let cancelled = false;
+    setRiskPlotError(false);
+    fetchCases()
+      .then((data: any[]) => {
+        if (!cancelled) setCasesForRiskPlot(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCasesForRiskPlot([]);
+          setRiskPlotError(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   const handleScan = async () => {
     setScanning(true);
     setErrorNotice(null);
