@@ -144,7 +144,7 @@ export default function CompliancePage() {
             disabled={loading}
             className="px-3 py-1.5 text-xs font-bold text-white bg-[#1E3A8A] hover:bg-[#172554] rounded transition-colors disabled:opacity-50"
           >
-            {loading ? (evaluationProgress || 'Evaluating…') : '⚡ Re-evaluate Queue'}
+            {loading ? (evaluationProgress || 'Evaluating…') : caseIdFilter ? '⚡ Re-evaluate This Case' : '⚡ Re-evaluate Queue'}
           </button>
         </div>
       </div>
