@@ -40,8 +40,8 @@ class RowErrorItem(BaseModel):
     raw_content: Dict[str, Any]
 
 class IngestionPreviewResponse(BaseModel):
-    preview_token: str
-    preview_expires_at: datetime
+    preview_token: Optional[str] = None
+    preview_expires_at: Optional[datetime] = None
     file_name: str
     file_sha256: str
     total_rows: int
