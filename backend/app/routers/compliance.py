@@ -3,7 +3,7 @@ from datetime import datetime, date, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from ..database import get_db, Base, engine
 from ..models import (
     Workspace, ApprovalCase, ComplianceRule, ComplianceResult, 
@@ -126,10 +126,12 @@ def get_compliance_queue(
     db: Session = Depends(get_db)
 ):
     ws = get_or_create_default_workspace(db)
-    seed_compliance_rules(db)
+    # Rule definitions are seeded during workspace/bootstrap setup; avoid writes on every read.
 
     # Fetch active cases in current data mode
-    cases = db.query(ApprovalCase).filter(
+    cases = db.query(ApprovalCase).options(
+        joinedload(ApprovalCase.institution)
+    ).filter(
         ApprovalCase.workspace_id == ws.id,
         ApprovalCase.data_mode == ws.active_data_mode
     ).all()
@@ -144,7 +146,9 @@ def get_compliance_queue(
     # evaluating hundreds of imported cases here caused slow requests, duplicate audit
     # events, and repeated alerts on every refresh. Use the explicit evaluate endpoint
     # to create/update results for a case.
-    results = db.query(ComplianceResult).filter(
+    results = db.query(ComplianceResult).options(
+        joinedload(ComplianceResult.rule)
+    ).filter(
         ComplianceResult.case_id.in_(case_ids)
     ).all()
 
