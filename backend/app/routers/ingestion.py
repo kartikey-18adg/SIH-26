@@ -81,8 +81,51 @@ ALLOWED_WORKFLOWS = [
 ]
 
 ALLOWED_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+ALLOWED_INSTITUTE_TYPES = ["GOVERNMENT", "GOVT_AIDED", "PRIVATE_SELF_FINANCED", "DEEMED_UNIVERSITY"]
+ALLOWED_STAGES = ["DRAFT", "DOCUMENT_REVIEW", "COMPLIANCE_CHECK", "UNDER_REVIEW", "APPROVED", "REJECTED", "COMPLETED"]
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+SHA256_PATTERN = __import__("re").compile(r"^[a-fA-F0-9]{64}$")
+
+def _normalized(value: Optional[str], default: str = "") -> str:
+    return (value or default).strip()
+
+def _validate_record_values(rec: IngestionRecord, row_number: int = 0) -> List[str]:
+    errors = []
+    prefix = f"Row {row_number}: " if row_number else ""
+    for field_name, value in [
+        ("aicte_permanent_id", rec.aicte_permanent_id),
+        ("institute_name", rec.institute_name),
+        ("case_reference", rec.case_reference),
+        ("internal_owner_name", rec.internal_owner_name),
+        ("state", rec.state),
+        ("district", rec.district),
+    ]:
+        if not value or not value.strip():
+            errors.append(f"{prefix}{field_name} cannot be blank.")
+    if rec.workflow_type not in ALLOWED_WORKFLOWS:
+        errors.append(f"{prefix}workflow_type must be one of: {', '.join(ALLOWED_WORKFLOWS)}.")
+    if rec.priority not in ALLOWED_PRIORITIES:
+        errors.append(f"{prefix}priority must be one of: {', '.join(ALLOWED_PRIORITIES)}.")
+    if rec.institute_type not in ALLOWED_INSTITUTE_TYPES:
+        errors.append(f"{prefix}institute_type must be one of: {', '.join(ALLOWED_INSTITUTE_TYPES)}.")
+    if rec.current_stage not in ALLOWED_STAGES:
+        errors.append(f"{prefix}current_stage must be one of: {', '.join(ALLOWED_STAGES)}.")
+    try:
+        date.fromisoformat(rec.target_date)
+    except (TypeError, ValueError):
+        errors.append(f"{prefix}target_date must be a valid YYYY-MM-DD date.")
+    if not rec.academic_period or not __import__("re").fullmatch(r"\\d{4}-\\d{4}", rec.academic_period):
+        errors.append(f"{prefix}academic_period must use YYYY-YYYY format.")
+    return errors
 
 def parse_and_validate_csv(content: bytes, filename: str, ws_id: str, db: Session) -> IngestionPreviewResponse:
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded CSV is empty.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="CSV exceeds the 5 MB upload limit.")
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload a .csv file.")
+
     file_sha256 = hashlib.sha256(content).hexdigest()
 
     try:
@@ -97,7 +140,16 @@ def parse_and_validate_csv(content: bytes, filename: str, ws_id: str, db: Sessio
             )
 
     csv_reader = csv.DictReader(io.StringIO(text_content))
-    fieldnames = [f.strip().lower() for f in (csv_reader.fieldnames or [])]
+    original_fieldnames = csv_reader.fieldnames or []
+    fieldnames = [f.strip().lower() if f else "" for f in original_fieldnames]
+
+    if not fieldnames or any(not name for name in fieldnames):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV contains a blank column name.")
+    if len(fieldnames) != len(set(fieldnames)):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="CSV contains duplicate column names after normalization.")
+    # DictReader must use the normalized names too; otherwise headers with spaces/case
+    # pass validation but fail to map row values correctly.
+    csv_reader.fieldnames = fieldnames
 
     # Validate header
     missing_cols = [c for c in REQUIRED_COLUMNS if c not in fieldnames]
@@ -122,8 +174,11 @@ def parse_and_validate_csv(content: bytes, filename: str, ws_id: str, db: Sessio
     row_index = 1
     for raw_row in csv_reader:
         row_index += 1
-        # Normalize keys
-        row = {k.strip().lower(): v.strip() for k, v in raw_row.items() if k}
+        # Header keys are normalized above. Reject rows with extra unnamed values.
+        if None in raw_row:
+            row_errors.append(RowErrorItem(row_number=row_index, field="row", error_message="Row has more values than the CSV header.", raw_content={str(k): str(v) for k, v in raw_row.items() if k is not None}))
+            continue
+        row = {k: (v or "").strip() for k, v in raw_row.items() if k}
 
         # Check required values
         has_error = False
@@ -163,6 +218,9 @@ def parse_and_validate_csv(content: bytes, filename: str, ws_id: str, db: Sessio
             ))
             has_error = True
 
+        if not aicte_id:
+            row_errors.append(RowErrorItem(row_number=row_index, field="aicte_permanent_id", error_message="AICTE permanent ID cannot be blank.", raw_content=row))
+            has_error = True
         if not inst_name:
             row_errors.append(RowErrorItem(
                 row_number=row_index,
@@ -170,6 +228,27 @@ def parse_and_validate_csv(content: bytes, filename: str, ws_id: str, db: Sessio
                 error_message="Institution name cannot be blank.",
                 raw_content=row
             ))
+            has_error = True
+        if not owner_name:
+            row_errors.append(RowErrorItem(row_number=row_index, field="internal_owner_name", error_message="Internal owner name cannot be blank.", raw_content=row))
+            has_error = True
+        if wf_type not in ALLOWED_WORKFLOWS:
+            row_errors.append(RowErrorItem(row_number=row_index, field="workflow_type", error_message=f"Unsupported workflow '{wf_type}'. Allowed: {', '.join(ALLOWED_WORKFLOWS)}.", raw_content=row))
+            has_error = True
+        institute_type = row.get("institute_type", "PRIVATE_SELF_FINANCED").upper().replace(" ", "_")
+        if institute_type not in ALLOWED_INSTITUTE_TYPES:
+            row_errors.append(RowErrorItem(row_number=row_index, field="institute_type", error_message=f"Unsupported institute type '{institute_type}'.", raw_content=row))
+            has_error = True
+        stage = row.get("current_stage", "DOCUMENT_REVIEW").upper().replace(" ", "_")
+        if stage not in ALLOWED_STAGES:
+            row_errors.append(RowErrorItem(row_number=row_index, field="current_stage", error_message=f"Unsupported current stage '{stage}'.", raw_content=row))
+            has_error = True
+        priority = row.get("priority", "MEDIUM").upper()
+        if priority not in ALLOWED_PRIORITIES:
+            row_errors.append(RowErrorItem(row_number=row_index, field="priority", error_message=f"Unsupported priority '{priority}'.", raw_content=row))
+            has_error = True
+        if not row.get("state", "Maharashtra").strip() or not row.get("district", "Pune").strip():
+            row_errors.append(RowErrorItem(row_number=row_index, field="location", error_message="State and district cannot be blank.", raw_content=row))
             has_error = True
 
         # Validate date
@@ -188,15 +267,15 @@ def parse_and_validate_csv(content: bytes, filename: str, ws_id: str, db: Sessio
             valid_records.append(IngestionRecord(
                 aicte_permanent_id=aicte_id,
                 institute_name=inst_name,
-                institute_type=row.get("institute_type", "PRIVATE_SELF_FINANCED").upper().replace(" ", "_"),
+                institute_type=institute_type,
                 state=row.get("state", "Maharashtra"),
                 district=row.get("district", "Pune"),
                 case_reference=case_ref,
-                workflow_type=wf_type if wf_type in ALLOWED_WORKFLOWS else "EXTENSION_OF_APPROVAL",
+                workflow_type=wf_type,
                 academic_period=row.get("academic_period", "2025-2026"),
-                current_stage=row.get("current_stage", "DOCUMENT_REVIEW").upper().replace(" ", "_"),
-                priority=row.get("priority", "MEDIUM").upper(),
-                internal_owner_name=owner_name or "Administrative Coordinator",
+                current_stage=stage,
+                priority=priority,
+                internal_owner_name=owner_name,
                 target_date=target_date_str,
                 notes=row.get("notes")
             ))
@@ -220,8 +299,13 @@ async def preview_ingestion_file(
     db: Session = Depends(get_db)
 ):
     ws = get_or_create_default_workspace(db)
-    content = await file.read()
-    return parse_and_validate_csv(content, file.filename or "upload.csv", ws.id, db)
+    filename = file.filename or ""
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload a .csv file.")
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="CSV exceeds the 5 MB upload limit.")
+    return parse_and_validate_csv(content, filename or "upload.csv", ws.id, db)
 
 @router.post("/commit", response_model=IngestionCommitResponse)
 def commit_ingestion_batch(
@@ -231,12 +315,36 @@ def commit_ingestion_batch(
 ):
     check_role_permission(current_role, ["Institution Coordinator", "Administrator"], "data import and ingestion commit")
     if not req.records:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No valid records provided for commit."
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid records provided for commit.")
+    if not req.original_filename or not req.original_filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="original_filename must be a .csv filename.")
+    if not SHA256_PATTERN.fullmatch(req.file_sha256 or ""):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file_sha256 must be a 64-character SHA-256 hex digest.")
+    if len(req.records) > 10000:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="A single batch cannot exceed 10,000 records.")
+
+    # Revalidate every field at commit time; clients must not be able to bypass preview validation.
+    errors = []
+    seen_refs = set()
+    for index, rec in enumerate(req.records, start=1):
+        errors.extend(_validate_record_values(rec, index))
+        ref = rec.case_reference.strip()
+        if ref in seen_refs:
+            errors.append(f"Row {index}: duplicate case_reference '{ref}' within commit payload.")
+        seen_refs.add(ref)
+    if errors:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"message": "Commit validation failed.", "errors": errors[:100]})
 
     ws = get_or_create_default_workspace(db)
+    existing_refs = {
+        row[0] for row in db.query(ApprovalCase.case_reference).filter(
+            ApprovalCase.workspace_id == ws.id,
+            ApprovalCase.data_mode == "IMPORTED"
+        ).all()
+    }
+    duplicates = sorted(existing_refs.intersection(seen_refs))
+    if duplicates:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"message": "Case references already exist in IMPORTED mode.", "duplicates": duplicates[:100]})
 
     # 1. Create Ingestion Batch
     batch_ref = f"BATCH-{datetime.now().strftime('%Y%m%d')}-{hashlib.md5(req.file_sha256.encode()).hexdigest()[:6].upper()}"
@@ -329,7 +437,11 @@ def commit_ingestion_batch(
         }
     )
     db.add(audit)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return IngestionCommitResponse(
         success=True,
