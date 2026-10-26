@@ -577,6 +577,24 @@ def commit_ingestion_batch(
                 reason=f"Ingested from file '{req.original_filename}' with SHA-256 {req.file_sha256[:12]}..."
             )
             db.add(hist)
+
+            # Record one traceable audit entry per imported case. These are created
+            # only for rows actually committed from the validated upload.
+            db.add(AuditEvent(
+                workspace_id=ws.id,
+                actor_name="Institutional Coordinator",
+                actor_role="COORDINATOR",
+                entity_type="CASE",
+                entity_id=case.id,
+                action="CASE_IMPORTED",
+                details_json={
+                    "case_reference": rec.case_reference,
+                    "institution_name": rec.institute_name,
+                    "batch_reference": batch_ref,
+                    "filename": req.original_filename,
+                    "synthetic_demo_event": False,
+                },
+            ))
             committed_count += 1
     
         # 3. Switch workspace mode to IMPORTED
