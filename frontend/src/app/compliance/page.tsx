@@ -11,9 +11,10 @@ export default function CompliancePage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [evaluationProgress, setEvaluationProgress] = useState<string | null>(null);
-  const [caseIdFilter, setCaseIdFilter] = useState<string | null>(() =>
-    typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('case_id') : null
-  );
+  // Keep the first render identical on the server and client. Read the URL
+  // only after hydration, then load the correctly scoped queue.
+  const [caseIdFilter, setCaseIdFilter] = useState<string | null>(null);
+  const [caseFilterReady, setCaseFilterReady] = useState(false);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -83,8 +84,14 @@ export default function CompliancePage() {
   };
 
   useEffect(() => {
+    setCaseIdFilter(new URLSearchParams(window.location.search).get('case_id'));
+    setCaseFilterReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!caseFilterReady) return;
     loadComplianceQueue();
-  }, [activeMode, caseIdFilter]);
+  }, [activeMode, caseIdFilter, caseFilterReady]);
 
   const filteredItems = useMemo(() => {
     return queueItems.filter(item => {
