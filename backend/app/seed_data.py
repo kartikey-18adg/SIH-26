@@ -488,7 +488,7 @@ def seed_demo_workspace_data(db: Session, workspace_id: str):
     # Re-seeding replaces only this simulator's records; real audit history is preserved.
     db.query(AuditEvent).filter(
         AuditEvent.workspace_id == workspace_id,
-        AuditEvent.actor_name == "Demo Activity Simulator",
+        AuditEvent.details_json["synthetic_demo_event"].as_boolean() == True,
     ).delete(synchronize_session=False)
 
     aud1 = AuditEvent(
@@ -545,8 +545,8 @@ def seed_demo_workspace_data(db: Session, workspace_id: str):
             event_time = now - timedelta(days=day_offset, hours=(event_index * 3) % 24, minutes=(day_offset * 11 + event_index * 13) % 60)
             simulated_events.append(AuditEvent(
                 workspace_id=workspace_id,
-                actor_name="Demo Activity Simulator",
-                actor_role="SYSTEM",
+                actor_name=actor,
+                actor_role=role,
                 entity_type=entity_type,
                 entity_id=related_case.id,
                 action=action,
