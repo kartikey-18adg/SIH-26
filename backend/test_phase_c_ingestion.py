@@ -6,13 +6,14 @@ Run from the repository root with:
 import sys
 import os
 import unittest
+from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import sessionmaker
 from backend.app.database import Base
-from backend.app.models import Workspace, Institution, ApprovalCase
+from backend.app.models import Workspace, Institution, ApprovalCase, IngestionPreview
 from backend.app.routers.ingestion import (
     parse_and_validate_csv,
     IngestionRecord,
@@ -166,6 +167,38 @@ class IngestionValidationTests(unittest.TestCase):
         result = parse_and_validate_csv(csv_bytes, "mode-isolation.csv", ws.id, self.db)
         self.assertEqual(result.valid_count, 1)
         self.assertEqual(result.error_count, 0)
+
+    def test_preview_claim_avoids_naive_aware_datetime_python_comparison(self):
+        ws = Workspace(name="Timezone Test Workspace", slug="timezone-test", active_data_mode="IMPORTED")
+        self.db.add(ws)
+        self.db.flush()
+        now = datetime.now(timezone.utc)
+        preview = IngestionPreview(
+            workspace_id=ws.id,
+            token_hash="a" * 64,
+            original_filename="institutional_cases_template.csv",
+            file_sha256="b" * 64,
+            records_json=[],
+            expires_at=now + timedelta(minutes=10),
+        )
+        self.db.add(preview)
+        self.db.commit()
+
+        # SQLite may reload DateTime(timezone=True) values as naive datetimes.
+        # The database must evaluate this conditional update rather than SQLAlchemy
+        # comparing the loaded timestamp with an aware Python datetime.
+        result = self.db.execute(
+            update(IngestionPreview)
+            .where(
+                IngestionPreview.id == preview.id,
+                IngestionPreview.consumed_at.is_(None),
+                IngestionPreview.expires_at > now,
+            )
+            .values(consumed_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        self.assertEqual(result.rowcount, 1)
+        self.db.commit()
 
     def test_commit_record_validation_rejects_invalid_values(self):
         record = IngestionRecord(
