@@ -147,7 +147,7 @@ def parse_and_validate_file(content: bytes, filename: str, ws_id: str, db: Sessi
         writer = csv.writer(buffer)
         writer.writerow([str(value).strip() if value is not None else "" for value in header])
         for row in rows:
-            writer.writerow(["" if value is None else (value.isoformat() if hasattr(value, "isoformat") else str(value)) for value in row])
+            writer.writerow(["" if value is None else (value.strftime("%Y-%m-%d") if hasattr(value, "strftime") else str(value)) for value in row])
         workbook.close()
         parsed = parse_and_validate_csv(buffer.getvalue().encode("utf-8"), filename.rsplit(".", 1)[0] + ".csv", ws_id, db)
         parsed.file_name = filename
