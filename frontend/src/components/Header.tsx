@@ -130,18 +130,20 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
             </select>
           </div>
 
-          <button
-            onClick={canImportData ? onOpenImport : undefined}
-            disabled={!canImportData}
-            className={`px-2.5 py-1 text-xs border rounded transition-colors flex items-center gap-1.5 ${
-              canImportData
-                ? 'border-[#C6C4BA] hover:bg-[#F2F1EC] text-[#1A1917] cursor-pointer'
-                : 'border-[#E2E0D8] bg-[#F7F7F5] text-[#A8A69E] cursor-not-allowed'
-            }`}
-            title={canImportData ? "Import Institutional Dossier" : "Data import restricted to Institution Coordinator or Administrator"}
-          >
-            <span>📥 Import Data</span>
-          </button>
+          {activeMode === 'IMPORTED' && (
+            <button
+              onClick={canImportData ? onOpenImport : undefined}
+              disabled={!canImportData}
+              className={`px-2.5 py-1 text-xs border rounded transition-colors flex items-center gap-1.5 ${
+                canImportData
+                  ? 'border-[#C6C4BA] hover:bg-[#F2F1EC] text-[#1A1917] cursor-pointer'
+                  : 'border-[#E2E0D8] bg-[#F7F7F5] text-[#A8A69E] cursor-not-allowed'
+              }`}
+              title={canImportData ? "Import Institutional Dossier" : "Data import restricted to Institution Coordinator or Administrator"}
+            >
+              <span>📥 Import Data</span>
+            </button>
+          )}
 
           <button
             onClick={canManageSettings ? onOpenSettings : undefined}
