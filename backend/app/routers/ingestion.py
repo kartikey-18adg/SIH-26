@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import update
 from ..database import get_db
-from ..models import Workspace, IngestionBatch, IngestionPreview, Institution, ApprovalCase, CaseStageHistory, AuditEvent, Alert, NotificationOutbox
+from ..models import Workspace, IngestionBatch, IngestionPreview, Institution, ApprovalCase, CaseStageHistory, AuditEvent, Alert, NotificationOutbox, Task
 from .workspace import get_or_create_default_workspace
 from ..permissions import get_current_role, check_role_permission
 
@@ -680,6 +680,16 @@ def remove_imported_data(
         if imported_alert_ids:
             db.query(NotificationOutbox).filter(
                 NotificationOutbox.alert_id.in_(imported_alert_ids)
+            ).delete(synchronize_session=False)
+
+        # Explicitly delete dependents whose ORM relationships do not cascade.
+        if imported_case_ids:
+            db.query(Alert).filter(
+                Alert.workspace_id == ws.id,
+                Alert.case_id.in_(imported_case_ids)
+            ).delete(synchronize_session=False)
+            db.query(Task).filter(
+                Task.case_id.in_(imported_case_ids)
             ).delete(synchronize_session=False)
 
         cases_removed = len(imported_cases)
