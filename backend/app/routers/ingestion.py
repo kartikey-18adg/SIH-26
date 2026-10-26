@@ -1,5 +1,6 @@
 import csv
 import io
+import os
 import hashlib
 import secrets
 from datetime import datetime, date, timezone, timedelta
@@ -122,6 +123,42 @@ def _validate_record_values(rec: IngestionRecord, row_number: int = 0) -> List[s
     if not rec.academic_period or not __import__("re").fullmatch(r"\d{4}-\d{4}", rec.academic_period):
         errors.append(f"{prefix}academic_period must use YYYY-YYYY format.")
     return errors
+
+def parse_and_validate_file(content: bytes, filename: str, ws_id: str, db: Session) -> IngestionPreviewResponse:
+    """Parse CSV or the first worksheet of an XLSX workbook using shared validation."""
+    extension = os.path.splitext(filename.lower())[1]
+    if extension == ".csv":
+        return parse_and_validate_csv(content, filename, ws_id, db)
+    if extension != ".xlsx":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload a .csv or .xlsx file.")
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded XLSX is empty.")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="XLSX exceeds the 5 MB upload limit.")
+    try:
+        from openpyxl import load_workbook
+        workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        worksheet = workbook.active
+        rows = worksheet.iter_rows(values_only=True)
+        header = next(rows, None)
+        if not header:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="XLSX worksheet is empty.")
+        buffer = io.StringIO(newline="")
+        writer = csv.writer(buffer)
+        writer.writerow([str(value).strip() if value is not None else "" for value in header])
+        for row in rows:
+            writer.writerow(["" if value is None else (value.isoformat() if hasattr(value, "isoformat") else str(value)) for value in row])
+        workbook.close()
+        parsed = parse_and_validate_csv(buffer.getvalue().encode("utf-8"), filename.rsplit(".", 1)[0] + ".csv", ws_id, db)
+        parsed.file_name = filename
+        parsed.file_sha256 = hashlib.sha256(content).hexdigest()
+        return parsed
+    except HTTPException:
+        raise
+    except ImportError:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="XLSX support requires openpyxl. Install it with: pip install openpyxl")
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unable to read XLSX workbook: {exc}")
 
 def parse_and_validate_csv(content: bytes, filename: str, ws_id: str, db: Session) -> IngestionPreviewResponse:
     if not content:
@@ -305,12 +342,12 @@ async def preview_ingestion_file(
 ):
     ws = get_or_create_default_workspace(db)
     filename = file.filename or ""
-    if not filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload a .csv file.")
+    if not filename.lower().endswith((".csv", ".xlsx")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please upload a .csv or .xlsx file.")
     content = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="CSV exceeds the 5 MB upload limit.")
-    preview = parse_and_validate_csv(content, filename or "upload.csv", ws.id, db)
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File exceeds the 5 MB upload limit.")
+    preview = parse_and_validate_file(content, filename or "upload.csv", ws.id, db)
     # The client receives a random bearer token; only its SHA-256 hash is persisted.
     token = secrets.token_urlsafe(32)
     expires_at = utc_now() + timedelta(minutes=15)
@@ -338,8 +375,8 @@ def commit_ingestion_batch(
     check_role_permission(current_role, ["Institution Coordinator", "Administrator"], "data import and ingestion commit")
     if not req.records:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid records provided for commit.")
-    if not req.original_filename or not req.original_filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="original_filename must be a .csv filename.")
+    if not req.original_filename or not req.original_filename.lower().endswith((".csv", ".xlsx")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="original_filename must be a .csv or .xlsx filename.")
     if not SHA256_PATTERN.fullmatch(req.file_sha256 or ""):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="file_sha256 must be a 64-character SHA-256 hex digest.")
     if len(req.records) > 10000:
