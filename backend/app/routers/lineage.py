@@ -7,11 +7,15 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import (
     ApprovalCase,
+    Alert,
     AuditEvent,
+    CaseStageHistory,
+    Institution,
     ComplianceResult,
     ComplianceRule,
     DocumentVersion,
     EvidenceDocument,
+    Task,
 )
 from ..permissions import check_role_permission, get_current_role
 from .workspace import get_or_create_default_workspace
@@ -82,6 +86,72 @@ def get_case_lineage(
         created_at=case.created_at,
         updated_at=case.updated_at,
     )
+
+    # Expand the graph beyond documents and checks so users can follow the operational
+    # lifecycle: institution → case → stage history, tasks, alerts, and audit events.
+    institution = db.query(Institution).filter(Institution.id == case.institution_id).first()
+    if institution is not None:
+        institution_node_id = f"institution:{institution.id}"
+        _node(
+            nodes, institution_node_id, "institution", institution.legal_name,
+            institution_id=institution.id,
+            aicte_permanent_id=institution.aicte_permanent_id,
+            aishe_code=institution.aishe_code,
+            state=institution.state,
+            district=institution.district,
+            data_mode=institution.data_mode,
+        )
+        _edge(edges, institution_node_id, case_node_id, "filed_case")
+
+    stage_history = (
+        db.query(CaseStageHistory)
+        .filter(CaseStageHistory.case_id == case.id)
+        .order_by(CaseStageHistory.created_at.asc())
+        .all()
+    )
+    for history in stage_history:
+        history_node_id = f"stage_history:{history.id}"
+        _node(
+            nodes, history_node_id, "stage_history",
+            f"{history.from_stage} → {history.to_stage}",
+            history_id=history.id,
+            from_stage=history.from_stage,
+            to_stage=history.to_stage,
+            changed_by=history.changed_by,
+            reason=history.reason,
+            created_at=history.created_at,
+        )
+        _edge(edges, case_node_id, history_node_id, "has_stage_history")
+
+    tasks = db.query(Task).filter(Task.case_id == case.id).order_by(Task.created_at.asc()).all()
+    for task in tasks:
+        task_node_id = f"task:{task.id}"
+        _node(
+            nodes, task_node_id, "task", task.title,
+            task_id=task.id,
+            assignee_name=task.assignee_name,
+            priority=task.priority,
+            status=task.status,
+            due_date=task.due_date,
+            created_at=task.created_at,
+        )
+        _edge(edges, case_node_id, task_node_id, "has_task")
+
+    alerts = db.query(Alert).filter(Alert.case_id == case.id).order_by(Alert.created_at.asc()).all()
+    for alert in alerts:
+        alert_node_id = f"alert:{alert.id}"
+        _node(
+            nodes, alert_node_id, "alert", alert.title,
+            alert_id=alert.id,
+            category=alert.category,
+            severity=alert.severity,
+            status=alert.status,
+            assigned_to=alert.assigned_to,
+            created_at=alert.created_at,
+        )
+        _edge(edges, case_node_id, alert_node_id, "raised_alert")
+        if alert.task_id:
+            _edge(edges, f"task:{alert.task_id}", alert_node_id, "relates_to_task")
 
     documents = (
         db.query(EvidenceDocument)
