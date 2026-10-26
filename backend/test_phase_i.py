@@ -74,11 +74,16 @@ def run_phase_i_tests():
         # The dashboard intentionally excludes legacy IMPORTED rows that lack
         # ingestion-batch provenance. Match its eligibility filter before counting
         # active cases, rather than comparing against every case returned by list_cases.
-        dashboard_eligible_imported = [
-            c for c in imported_cases
-            if c.institution is not None
-            and c.institution.provenance_batch_id is not None
-        ]
+        dashboard_eligible_imported = []
+        for c in imported_cases:
+            institution = db.query(Institution).filter(
+                Institution.id == c.institution_id,
+                Institution.workspace_id == ws.id,
+                Institution.data_mode == "IMPORTED",
+                Institution.provenance_batch_id.isnot(None)
+            ).first()
+            if institution is not None:
+                dashboard_eligible_imported.append(c)
         expected_active_imported = sum(
             1 for c in dashboard_eligible_imported if c.status != "COMPLETED"
         )
