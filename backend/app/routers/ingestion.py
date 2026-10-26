@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import update
 from ..database import get_db
-from ..models import Workspace, IngestionBatch, IngestionPreview, Institution, ApprovalCase, CaseStageHistory, AuditEvent
+from ..models import Workspace, IngestionBatch, IngestionPreview, Institution, ApprovalCase, CaseStageHistory, AuditEvent, Alert, NotificationOutbox
 from .workspace import get_or_create_default_workspace
 from ..permissions import get_current_role, check_role_permission
 
@@ -643,3 +643,98 @@ def get_csv_template():
         "filename": "institutional_cases_template.csv",
         "content": header + example
     }
+
+
+class RemoveImportedDataResponse(BaseModel):
+    success: bool
+    cases_removed: int
+    institutions_removed: int
+    batches_removed: int
+    message: str
+
+
+@router.delete("/imported-data", response_model=RemoveImportedDataResponse)
+def remove_imported_data(
+    db: Session = Depends(get_db),
+    current_role: str = Depends(get_current_role)
+):
+    """Permanently remove imported records and their dependent operational data only."""
+    check_role_permission(current_role, ["Administrator"], "removing imported institutional data")
+    ws = get_or_create_default_workspace(db)
+
+    try:
+        imported_cases = db.query(ApprovalCase).filter(
+            ApprovalCase.workspace_id == ws.id,
+            ApprovalCase.data_mode == "IMPORTED"
+        ).all()
+        imported_case_ids = [case.id for case in imported_cases]
+
+        # Notification rows reference alerts directly, so remove those dependent
+        # rows before SQLAlchemy cascades imported-case alerts.
+        imported_alert_ids = [
+            row[0] for row in db.query(Alert.id).filter(
+                Alert.workspace_id == ws.id,
+                Alert.case_id.in_(imported_case_ids)
+            ).all()
+        ] if imported_case_ids else []
+        if imported_alert_ids:
+            db.query(NotificationOutbox).filter(
+                NotificationOutbox.alert_id.in_(imported_alert_ids)
+            ).delete(synchronize_session=False)
+
+        cases_removed = len(imported_cases)
+        for case in imported_cases:
+            db.delete(case)
+        db.flush()
+
+        # Delete only imported institutions that no longer have any cases.
+        imported_institutions = db.query(Institution).filter(
+            Institution.workspace_id == ws.id,
+            Institution.data_mode == "IMPORTED"
+        ).all()
+        institutions_removed = 0
+        for institution in imported_institutions:
+            if not db.query(ApprovalCase.id).filter(
+                ApprovalCase.institution_id == institution.id
+            ).first():
+                db.delete(institution)
+                institutions_removed += 1
+        db.flush()
+
+        # Remove ingestion batch metadata only when no institution still depends on it.
+        batches = db.query(IngestionBatch).filter(
+            IngestionBatch.workspace_id == ws.id
+        ).all()
+        batches_removed = 0
+        for batch in batches:
+            if not db.query(Institution.id).filter(
+                Institution.provenance_batch_id == batch.id
+            ).first():
+                db.delete(batch)
+                batches_removed += 1
+
+        db.add(AuditEvent(
+            workspace_id=ws.id,
+            actor_name="Administrative User",
+            actor_role=current_role,
+            entity_type="WORKSPACE",
+            entity_id=ws.id,
+            action="IMPORTED_DATA_REMOVED",
+            details_json={
+                "cases_removed": cases_removed,
+                "institutions_removed": institutions_removed,
+                "batches_removed": batches_removed,
+            }
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return RemoveImportedDataResponse(
+        success=True,
+        cases_removed=cases_removed,
+        institutions_removed=institutions_removed,
+        batches_removed=batches_removed,
+        message=f"Removed {cases_removed} imported cases, {institutions_removed} imported institutions, and {batches_removed} ingestion batches. Demo and manual records were preserved."
+    )
