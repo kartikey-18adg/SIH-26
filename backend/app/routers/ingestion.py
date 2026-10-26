@@ -479,6 +479,10 @@ def commit_ingestion_batch(
             IngestionPreview.expires_at > claimed_at,
         )
         .values(consumed_at=claimed_at)
+        # Let the database evaluate the expiry comparison. SQLite may return
+        # stored timestamps as naive datetimes while claimed_at is timezone-aware;
+        # ORM "evaluate" synchronization would compare them in Python and crash.
+        .execution_options(synchronize_session=False)
     )
     if claim.rowcount != 1:
         db.rollback()
