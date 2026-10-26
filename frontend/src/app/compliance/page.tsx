@@ -3,13 +3,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { AppShell } from '../../components/AppShell';
-import { fetchComplianceQueueApi, getComplianceExportCsvUrl } from '../../services/api';
+import { fetchComplianceQueueApi, fetchCases, evaluateCaseCompliance, getComplianceExportCsvUrl } from '../../services/api';
 
 export default function CompliancePage() {
   const { summary, activeMode, openCaseByRef, setShowSettingsModal } = useWorkspace();
   const [queueItems, setQueueItems] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [evaluationProgress, setEvaluationProgress] = useState<string | null>(null);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -27,6 +28,51 @@ export default function CompliancePage() {
       setError(err.message || 'Failed to fetch compliance queue.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Explicitly evaluate each case in the active dataset, then reload the saved
+  // queue. A plain GET only reads existing results and cannot populate new cases.
+  const reevaluateAllCases = async () => {
+    setLoading(true);
+    setError(null);
+    setEvaluationProgress('Loading cases…');
+    let evaluated = 0;
+    const failures: string[] = [];
+    try {
+      const cases = await fetchCases();
+      if (!Array.isArray(cases) || cases.length === 0) {
+        setQueueItems([]);
+        setEvaluationProgress(null);
+        return;
+      }
+
+      for (let index = 0; index < cases.length; index += 1) {
+        const item = cases[index];
+        const caseId = item?.id;
+        if (!caseId) continue;
+        setEvaluationProgress(`Evaluating case ${index + 1} of ${cases.length}…`);
+        try {
+          await evaluateCaseCompliance(caseId);
+          evaluated += 1;
+        } catch (err: any) {
+          failures.push(`${item.case_reference || caseId}: ${err.message || 'evaluation failed'}`);
+        }
+      }
+
+      setEvaluationProgress('Refreshing compliance queue…');
+      const data = await fetchComplianceQueueApi();
+      setQueueItems(Array.isArray(data) ? data : []);
+      if (failures.length) {
+        setError(`Evaluated ${evaluated} of ${cases.length} cases. ${failures.length} failed: ${failures.slice(0, 3).join('; ')}${failures.length > 3 ? '; …' : ''}`);
+      } else {
+        setError(null);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Could not evaluate compliance for the active cases.');
+    } finally {
+      setLoading(false);
+      setEvaluationProgress(null);
     }
   };
 
@@ -88,11 +134,11 @@ export default function CompliancePage() {
           </a>
           <button
             type="button"
-            onClick={loadComplianceQueue}
+            onClick={reevaluateAllCases}
             disabled={loading}
             className="px-3 py-1.5 text-xs font-bold text-white bg-[#1E3A8A] hover:bg-[#172554] rounded transition-colors disabled:opacity-50"
           >
-            {loading ? 'Refreshing...' : '⚡ Re-evaluate Queue'}
+            {loading ? (evaluationProgress || 'Evaluating…') : '⚡ Re-evaluate Queue'}
           </button>
         </div>
       </div>
