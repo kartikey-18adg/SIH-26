@@ -55,11 +55,13 @@ def get_case_lineage(
     check_role_permission(current_role, READ_ROLES, "viewing evidence lineage")
     workspace = get_or_create_default_workspace(db)
 
+    # Users generally know the human-readable case reference, not the internal UUID.
+    # Accept either so a reference can be used to find the approval case ID and lineage.
     case = (
         db.query(ApprovalCase)
         .filter(
-            ApprovalCase.id == case_id,
             ApprovalCase.workspace_id == workspace.id,
+            (ApprovalCase.id == case_id) | (ApprovalCase.case_reference == case_id),
         )
         .first()
     )
