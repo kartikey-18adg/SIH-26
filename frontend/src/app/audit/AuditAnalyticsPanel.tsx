@@ -26,11 +26,13 @@ export function AuditAnalyticsPanel() {
 
   const maxDaily = Math.max(1, ...(data?.daily.map(item => item.count) ?? [0]));
   const maxAction = Math.max(1, ...(data?.actions.map(item => item.count) ?? [0]));
-  const points = (data?.daily ?? []).map((item, index) => {
-    const x = data!.daily.length <= 1 ? 0 : index * 300 / (data!.daily.length - 1);
-    const y = 82 - (item.count / maxDaily) * 68;
-    return `${x},${y}`;
-  }).join(' ');
+  const chartPoints = (data?.daily ?? []).map((item, index) => ({
+    ...item,
+    x: data!.daily.length <= 1 ? 0 : index * 300 / (data!.daily.length - 1),
+    y: 82 - (item.count / maxDaily) * 68,
+  }));
+  const points = chartPoints.map(point => `${point.x},${point.y}`).join(' ');
+  const areaPoints = chartPoints.length ? `0,82 ${points} 300,82` : '';
 
   return (
     <section className="space-y-3" aria-label="Audit activity analytics">
@@ -54,7 +56,13 @@ export function AuditAnalyticsPanel() {
             </div>
             <svg viewBox="0 0 300 100" role="img" aria-label="Line chart showing daily audit event counts" className="h-32 w-full overflow-visible">
               {[14, 48, 82].map(y => <line key={y} x1="0" x2="300" y1={y} y2={y} stroke="#E2E0D8" strokeDasharray="3 3" />)}
+              {areaPoints && <polygon points={areaPoints} fill="#1E3A8A" opacity="0.09" />}
               <polyline points={points} fill="none" stroke="#1E3A8A" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+              {chartPoints.map(point => (
+                <circle key={point.date} cx={point.x} cy={point.y} r={point.count ? 2.2 : 1} fill={point.count ? '#1E3A8A' : '#C6C4BA'}>
+                  <title>{`${shortDate(point.date)}: ${point.count} events`}</title>
+                </circle>
+              ))}
             </svg>
             <div className="flex justify-between text-[10px] text-[#77756C]">
               <span>{data.daily[0] ? shortDate(data.daily[0].date) : ''}</span>
