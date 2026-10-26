@@ -6,6 +6,7 @@ Run from the repository root with:
 import sys
 import os
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
@@ -13,11 +14,13 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from sqlalchemy import create_engine, update
 from sqlalchemy.orm import sessionmaker
 from backend.app.database import Base
-from backend.app.models import Workspace, Institution, ApprovalCase, IngestionPreview
+from backend.app.models import Workspace, Institution, ApprovalCase, IngestionPreview, IngestionBatch, CaseStageHistory, AuditEvent
 from backend.app.routers.ingestion import (
     parse_and_validate_csv,
     IngestionRecord,
     _validate_record_values,
+    commit_ingestion_batch,
+    IngestionCommitRequest,
 )
 from fastapi import HTTPException
 
@@ -199,6 +202,52 @@ class IngestionValidationTests(unittest.TestCase):
         )
         self.assertEqual(result.rowcount, 1)
         self.db.commit()
+
+
+    def test_failed_commit_rolls_back_preview_claim_and_all_batch_writes(self):
+        ws = Workspace(name="Rollback Workspace", slug="default", active_data_mode="DEMO")
+        self.db.add(ws)
+        self.db.flush()
+        record = IngestionRecord(
+            aicte_permanent_id="ID-ROLLBACK",
+            institute_name="Rollback Institute",
+            case_reference="CASE-ROLLBACK",
+            workflow_type="EXTENSION_OF_APPROVAL",
+            target_date="2026-11-15",
+            internal_owner_name="Coordinator",
+        )
+        token = "rollback-preview-token"
+        preview = IngestionPreview(
+            workspace_id=ws.id,
+            token_hash=__import__("hashlib").sha256(token.encode("utf-8")).hexdigest(),
+            original_filename="rollback.csv",
+            file_sha256="c" * 64,
+            records_json=[record.dict()],
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        )
+        self.db.add(preview)
+        self.db.commit()
+
+        request = IngestionCommitRequest(
+            preview_token=token,
+            original_filename="rollback.csv",
+            file_sha256="c" * 64,
+            records=[record],
+        )
+
+        # Simulate a database failure at the first write-stage flush, after
+        # the preview has been claimed but before any batch records are stored.
+        with patch.object(self.db, "flush", side_effect=RuntimeError("simulated database failure")):
+            with self.assertRaisesRegex(RuntimeError, "simulated database failure"):
+                commit_ingestion_batch(request, db=self.db, current_role="Administrator")
+
+        self.db.expire_all()
+        stored_preview = self.db.query(IngestionPreview).filter_by(id=preview.id).one()
+        self.assertIsNone(stored_preview.consumed_at)
+        self.assertEqual(self.db.query(IngestionBatch).count(), 0)
+        self.assertEqual(self.db.query(ApprovalCase).filter_by(case_reference="CASE-ROLLBACK").count(), 0)
+        self.assertEqual(self.db.query(CaseStageHistory).count(), 0)
+        self.assertEqual(self.db.query(AuditEvent).count(), 0)
 
     def test_commit_record_validation_rejects_invalid_values(self):
         record = IngestionRecord(
