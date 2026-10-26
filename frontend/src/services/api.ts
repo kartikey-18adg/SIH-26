@@ -434,3 +434,13 @@ export async function fetchAiComplianceInsights(caseId: string): Promise<{
   if (!res.ok) await handleResponseError(res, `AI compliance insights failed: HTTP ${res.status}`);
   return await res.json();
 }
+
+
+export async function removeImportedData() {
+  const res = await fetch(`${API_BASE}/ingestion/imported-data`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!res.ok) await handleResponseError(res, `Failed to remove imported data: HTTP ${res.status}`);
+  return await res.json();
+}

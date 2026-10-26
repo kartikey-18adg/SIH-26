@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { DataMode, SourceRegistryItem } from '../types/aiclear';
-import { fetchSources, resetDemoWorkspace } from '../services/api';
+import { fetchSources, resetDemoWorkspace, removeImportedData } from '../services/api';
 
 interface DataSourceSettingsModalProps {
   isOpen: boolean;
@@ -25,6 +25,7 @@ export const DataSourceSettingsModal: React.FC<DataSourceSettingsModalProps> = (
   const [targetMode, setTargetMode] = useState<DataMode>(currentMode);
   const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [removingImported, setRemovingImported] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,6 +68,23 @@ export const DataSourceSettingsModal: React.FC<DataSourceSettingsModalProps> = (
       setMessage(`Failed to reset demo: ${err.message}`);
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleRemoveImportedData = async () => {
+    if (!confirm('Permanently delete all imported institutional cases, their dependent evidence/compliance/workflow records, and unreferenced import metadata? Demo and manual records will be preserved. This cannot be undone.')) {
+      return;
+    }
+    setRemovingImported(true);
+    setMessage(null);
+    try {
+      const res = await removeImportedData();
+      setMessage(res.message);
+      onRefreshDashboard();
+    } catch (err: any) {
+      setMessage(`Failed to remove imported data: ${err.message}`);
+    } finally {
+      setRemovingImported(false);
     }
   };
 
@@ -174,6 +192,24 @@ export const DataSourceSettingsModal: React.FC<DataSourceSettingsModalProps> = (
               className="px-3 py-1.5 border border-[#C6C4BA] hover:bg-[#F2F1EC] text-xs font-medium rounded transition-colors text-[#1A1917]"
             >
               {resetting ? 'Resetting...' : 'Reset Demo Records'}
+            </button>
+          </div>
+
+          {/* Remove Imported Data */}
+          <div className="border border-[#E8B4B4] rounded p-4 bg-[#FFF9F9] flex items-center justify-between gap-4">
+            <div>
+              <h4 className="text-xs font-semibold text-[#8A1E20]">Remove Imported Data</h4>
+              <p className="text-xs text-[#6B3333] mt-0.5">
+                Permanently deletes imported records and dependent workflow data only. Demo and manual records are preserved.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleRemoveImportedData}
+              disabled={removingImported}
+              className="px-3 py-1.5 border border-[#B91C1C] bg-white hover:bg-[#FEF2F2] text-[#991B1B] text-xs font-medium rounded transition-colors disabled:opacity-60"
+            >
+              {removingImported ? 'Removing...' : 'Remove Imported Data'}
             </button>
           </div>
 
