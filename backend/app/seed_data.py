@@ -484,7 +484,13 @@ def seed_demo_workspace_data(db: Session, workspace_id: str):
     )
     db.add(n1)
 
-    # Audit Events
+    # Audit Events: clearly labelled synthetic demo activity spread across the last 30 days.
+    # Re-seeding replaces only this simulator's records; real audit history is preserved.
+    db.query(AuditEvent).filter(
+        AuditEvent.workspace_id == workspace_id,
+        AuditEvent.actor_name == "Demo Activity Simulator",
+    ).delete(synchronize_session=False)
+
     aud1 = AuditEvent(
         workspace_id=workspace_id,
         actor_name="System Seeder",
@@ -513,5 +519,46 @@ def seed_demo_workspace_data(db: Session, workspace_id: str):
         details_json={"verdict": "READY_FOR_PACKAGING", "notes": "Approved for final checklist export."}
     )
     db.add_all([aud1, aud2, aud3])
+
+    demo_activity = [
+        ("A. Coordinator", "DOCUMENT_REVIEWER", "DOCUMENT_REVIEW_RECORDED", "DOCUMENT"),
+        ("R. Reviewer", "COMPLIANCE_OFFICER", "COMPLIANCE_CHECKS_EVALUATED", "COMPLIANCE"),
+        ("S. Officer", "SUPERVISING_OFFICER", "INTERNAL_APPROVAL_RECORDED", "CASE"),
+        ("M. Registrar", "INSTITUTION_COORDINATOR", "EVIDENCE_UPLOADED", "DOCUMENT"),
+        ("System Monitor", "SYSTEM", "ALERT_SCAN_COMPLETED", "ALERT"),
+        ("A. Coordinator", "DOCUMENT_REVIEWER", "TASK_UPDATED", "TASK"),
+        ("R. Reviewer", "COMPLIANCE_OFFICER", "DATA_MODE_SWITCHED", "WORKSPACE"),
+        ("S. Officer", "SUPERVISING_OFFICER", "CASE_STAGE_CHANGED", "CASE"),
+        ("M. Registrar", "INSTITUTION_COORDINATOR", "CORRECTION_SUBMITTED", "CASE"),
+        ("System Monitor", "SYSTEM", "DEADLINE_CHECK_COMPLETED", "TASK"),
+    ]
+    demo_cases = [case14, case15, case16, case17, case18]
+    now = utc_now()
+    simulated_events = []
+    for day_offset in range(29, -1, -1):
+        # Vary the daily volume (2–8 events) to make the calendar and trend meaningful,
+        # while keeping the entire series explicitly synthetic and reproducible.
+        event_count = 2 + ((day_offset * 7 + 3) % 7)
+        for event_index in range(event_count):
+            actor, role, action, entity_type = demo_activity[(day_offset + event_index) % len(demo_activity)]
+            related_case = demo_cases[(day_offset + event_index) % len(demo_cases)]
+            event_time = now - timedelta(days=day_offset, hours=(event_index * 3) % 24, minutes=(day_offset * 11 + event_index * 13) % 60)
+            simulated_events.append(AuditEvent(
+                workspace_id=workspace_id,
+                actor_name="Demo Activity Simulator",
+                actor_role="SYSTEM",
+                entity_type=entity_type,
+                entity_id=related_case.id,
+                action=action,
+                details_json={
+                    "synthetic_demo_event": True,
+                    "simulated_actor": actor,
+                    "simulated_role": role,
+                    "case_reference": related_case.case_reference,
+                    "note": "Synthetic activity generated for dashboard demonstration; not a real user action."
+                },
+                created_at=event_time,
+            ))
+    db.add_all(simulated_events)
 
     db.commit()
