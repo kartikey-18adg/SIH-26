@@ -73,10 +73,10 @@ class IngestionValidationTests(unittest.TestCase):
 
     def test_malformed_rows_are_reported_not_committed(self):
         csv_bytes = (
-            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\\n"
-            b"ID-004,Short Row,CASE-004,EXTENSION_OF_APPROVAL\\n"
-            b"ID-005,Extra Value,CASE-005,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator,unexpected\\n"
-            b"ID-006,Bad Date,CASE-006,EXTENSION_OF_APPROVAL,not-a-date,Coordinator\\n"
+            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\n"
+            b"ID-004,Short Row,CASE-004,EXTENSION_OF_APPROVAL\n"
+            b"ID-005,Extra Value,CASE-005,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator,unexpected\n"
+            b"ID-006,Bad Date,CASE-006,EXTENSION_OF_APPROVAL,not-a-date,Coordinator\n"
         )
         result = parse_and_validate_csv(csv_bytes, "malformed.csv", "workspace-test", self.db)
         self.assertEqual(result.valid_count, 0)
@@ -86,9 +86,9 @@ class IngestionValidationTests(unittest.TestCase):
 
     def test_duplicate_case_references_within_file_are_rejected(self):
         csv_bytes = (
-            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\\n"
-            b"ID-007,Institute A,DUP-CASE,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator\\n"
-            b"ID-008,Institute B,DUP-CASE,EXTENSION_OF_APPROVAL,2026-11-16,Coordinator\\n"
+            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\n"
+            b"ID-007,Institute A,DUP-CASE,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator\n"
+            b"ID-008,Institute B,DUP-CASE,EXTENSION_OF_APPROVAL,2026-11-16,Coordinator\n"
         )
         result = parse_and_validate_csv(csv_bytes, "duplicates.csv", "workspace-test", self.db)
         self.assertEqual(result.valid_count, 1)
@@ -124,8 +124,8 @@ class IngestionValidationTests(unittest.TestCase):
         ))
         self.db.commit()
         csv_bytes = (
-            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\\n"
-            b"ID-009,New Institute,ALREADY-IMPORTED,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator\\n"
+            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\n"
+            b"ID-009,New Institute,ALREADY-IMPORTED,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator\n"
         )
         result = parse_and_validate_csv(csv_bytes, "existing.csv", ws.id, self.db)
         self.assertEqual(result.valid_count, 0)
@@ -160,8 +160,8 @@ class IngestionValidationTests(unittest.TestCase):
         ))
         self.db.commit()
         csv_bytes = (
-            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\\n"
-            b"ID-010,Imported Institute,SHARED-REFERENCE,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator\\n"
+            b"aicte_permanent_id,institute_name,case_reference,workflow_type,target_date,internal_owner_name\n"
+            b"ID-010,Imported Institute,SHARED-REFERENCE,EXTENSION_OF_APPROVAL,2026-11-15,Coordinator\n"
         )
         result = parse_and_validate_csv(csv_bytes, "mode-isolation.csv", ws.id, self.db)
         self.assertEqual(result.valid_count, 1)
