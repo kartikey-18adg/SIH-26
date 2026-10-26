@@ -26,6 +26,15 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         ApprovalCase.workspace_id == ws.id,
         ApprovalCase.data_mode == mode
     )
+    # Imported mode must only surface records backed by an actual ingestion batch.
+    # This excludes legacy/placeholder rows that may have been tagged IMPORTED
+    # before provenance tracking was enforced.
+    if mode == "IMPORTED":
+        cases_query = cases_query.join(Institution, ApprovalCase.institution_id == Institution.id).filter(
+            Institution.workspace_id == ws.id,
+            Institution.data_mode == "IMPORTED",
+            Institution.provenance_batch_id.isnot(None)
+        )
     cases = cases_query.order_by(ApprovalCase.target_date.asc()).all()
 
     total_active_cases = sum(1 for c in cases if c.status != "COMPLETED")
