@@ -1064,12 +1064,9 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={async () => {
-                setActiveTab('compliance');
-                setErrorNotice(null);
-                if (complianceResults.length === 0 && detail?.id) {
-                  await loadCaseCompliance(detail.id);
-                }
+              onClick={() => {
+                onClose();
+                window.location.href = '/compliance';
               }}
               className="px-3 py-1.5 text-xs font-medium text-white bg-[#1E3A8A] hover:bg-[#172554] rounded transition-colors"
             >
