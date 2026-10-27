@@ -23,7 +23,8 @@ Base.metadata.create_all(bind=engine)
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
-VAULT_DIR = "C:/Users/lenovo/.gemini/antigravity/scratch/aiclear/backend/vault"
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+VAULT_DIR = os.getenv("AICLEAR_VAULT_DIR", os.path.join(BACKEND_DIR, "vault"))
 os.makedirs(VAULT_DIR, exist_ok=True)
 
 ALLOWED_MIME_TYPES = {
