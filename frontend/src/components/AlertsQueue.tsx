@@ -284,7 +284,7 @@ export const AlertsQueue: React.FC<AlertsQueueProps> = ({
             <p className="py-4 text-center text-xs text-[#5E5D57]">{casesForRiskPlot.length === 0 ? 'Loading case data or no linked cases are available.' : 'No alerts with linked cases and target dates match the current filters.'}</p>
           ) : (
             <>
-              <div className="relative mt-3 h-48 rounded border border-[#E2E0D8] bg-[#FBFBF9] sm:h-56">
+              <div className="relative z-0 mt-3 h-48 rounded border border-[#E2E0D8] bg-[#FBFBF9] sm:h-56">
                 {[1,2,3,4].map(level => <div key={level} className="absolute left-0 right-0 border-t border-dashed border-[#E2E0D8]" style={{ top: `${y(level)}%` }} />)}
                 <div className="absolute bottom-0 left-[8%] right-[8%] border-t border-[#A8A69E]" />
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 -rotate-90 text-[9px] text-[#77756C]">Priority</div>

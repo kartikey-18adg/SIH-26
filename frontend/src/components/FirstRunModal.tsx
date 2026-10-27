@@ -30,7 +30,7 @@ export const FirstRunModal: React.FC<FirstRunModalProps> = ({ isOpen, onSelectMo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-xs p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 backdrop-blur-xs p-4">
       <div className="w-full max-w-2xl bg-[#FFFFFF] border border-[#C6C4BA] rounded shadow-xl overflow-hidden text-[#1A1917]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-[#E2E0D8] bg-[#F7F7F5] flex justify-between items-center">

@@ -30,7 +30,7 @@ export const NotificationOutboxModal: React.FC<NotificationOutboxModalProps> = (
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-xs p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 backdrop-blur-xs p-4">
       <div className="w-full max-w-3xl bg-[#FFFFFF] border border-[#C6C4BA] rounded shadow-2xl overflow-hidden flex flex-col max-h-[85vh] text-[#1A1917]">
         
         {/* Header */}

@@ -101,7 +101,7 @@ export const ProcessingSequence: React.FC<ProcessingSequenceProps> = ({
   const progressPercent = Math.round((currentStepIndex / steps.length) * 100);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1917]/60 backdrop-blur-none p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#1A1917]/60 backdrop-blur-none p-4">
       <div className="bg-[#FFFFFF] border border-[#E2E0D8] rounded-[2px] w-full max-w-xl shadow-none overflow-hidden">
         {/* Header */}
         <div className="px-5 py-3.5 bg-[#F2F1EC] border-b border-[#E2E0D8] flex items-center justify-between">

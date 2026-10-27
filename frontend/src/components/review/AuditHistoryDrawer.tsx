@@ -17,7 +17,7 @@ export const AuditHistoryDrawer: React.FC<AuditHistoryDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-[#1A1917]/40 backdrop-blur-none">
+    <div className="fixed inset-0 z-[100] flex items-center justify-end bg-[#1A1917]/40 backdrop-blur-none">
       <div className="bg-[#FFFFFF] border-l border-[#E2E0D8] w-full max-w-md h-full flex flex-col shadow-none">
         {/* Header */}
         <div className="px-5 py-4 bg-[#F2F1EC] border-b border-[#E2E0D8] flex items-center justify-between">

@@ -56,7 +56,7 @@ export const IntakeModal: React.FC<IntakeModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1917]/60 backdrop-blur-none p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#1A1917]/60 backdrop-blur-none p-4">
       <div className="bg-[#FFFFFF] border border-[#E2E0D8] rounded-[2px] w-full max-w-2xl shadow-none overflow-hidden flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-5 py-3.5 bg-[#F2F1EC] border-b border-[#E2E0D8] flex items-center justify-between">

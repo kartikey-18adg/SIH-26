@@ -18,7 +18,7 @@ export const DocumentInspectionModal: React.FC<DocumentInspectionModalProps> = (
   if (!document) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1917]/50 backdrop-blur-none p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#1A1917]/50 backdrop-blur-none p-4">
       <div className="bg-[#FFFFFF] border border-[#E2E0D8] rounded-[2px] w-full max-w-3xl max-h-[90vh] flex flex-col shadow-none">
         {/* Header */}
         <div className="px-5 py-3.5 bg-[#F2F1EC] border-b border-[#E2E0D8] flex items-center justify-between">

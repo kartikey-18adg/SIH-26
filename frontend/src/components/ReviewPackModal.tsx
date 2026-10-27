@@ -32,7 +32,7 @@ export const ReviewPackModal: React.FC<ReviewPackModalProps> = ({ caseId, isOpen
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-2 sm:p-4 print:p-0 print:static print:bg-white">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-xs p-2 sm:p-4 print:p-0 print:static print:bg-white">
       <div className="w-full max-w-4xl bg-[#FFFFFF] border border-[#C6C4BA] rounded shadow-2xl overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none text-[#1A1917]">
         
         {/* Top Control Bar (Hidden when printing) */}
