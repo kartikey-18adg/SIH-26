@@ -96,7 +96,7 @@ export const CaseDetailModal: React.FC<CaseDetailModalProps> = ({ caseItem, onCl
     setDetail(caseItem);
     fetchCaseDetail(caseItem.id)
       .then(d => {
-        setDetail(current => current?.id === caseItem.id ? d : current);
+        setDetail((current: any) => current?.id === caseItem.id ? d : current);
         if (d.allowed_next_stages && d.allowed_next_stages.length > 0) {
           setSelectedNextStage(d.allowed_next_stages[0]);
         }
