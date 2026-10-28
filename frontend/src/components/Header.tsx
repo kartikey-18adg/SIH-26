@@ -25,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
     { label: 'Task Queue', href: '/tasks' },
     { label: 'EVC Scheduling', href: '/evc' },
     { label: 'Approval Pathway', href: '/workflow-routing' },
+    { label: 'Workflow Execution', href: '/workflow-execution' },
     { label: 'Audit Trail', href: '/audit' },
     { label: 'Evidence Lineage', href: '/lineage' },
     { label: 'Readiness Simulator', href: '/readiness-simulator' },
