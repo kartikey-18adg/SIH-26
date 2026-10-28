@@ -95,7 +95,7 @@ export default function ComplianceOperationsPage() {
             Track time-bound obligations, submit existing vault evidence for independent verification, schedule Expert Visit Committee activity, and monitor deadline risks. Notifications in this prototype are simulated.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => act(() => api('/obligations/scan', { method: 'POST' }), 'Obligation deadline scan completed.')}>Scan obligations</button><button className={button} disabled={busy} onClick={() => act(() => api('/evc/scan', { method: 'POST' }), 'EVC reminder and overdue scan completed.')}>Scan EVC reminders</button></div>
+        <div className="flex flex-wrap gap-2"><a href={`${API}/operations/export.csv`} className="rounded border border-[#C6C4BA] bg-white px-3 py-2 text-xs font-semibold text-[#1E3A8A] hover:bg-[#EDF2F7]">Download operations CSV</a><button className={button} disabled={busy} onClick={() => act(() => api('/obligations/scan', { method: 'POST' }), 'Obligation deadline scan completed.')}>Scan obligations</button><button className={button} disabled={busy} onClick={() => act(() => api('/evc/scan', { method: 'POST' }), 'EVC reminder and overdue scan completed.')}>Scan EVC reminders</button></div>
       </div>
 
       {error && <div role="alert" className="mb-3 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
