@@ -308,3 +308,15 @@ class EVCVisit(Base):
     created_by = Column(String(100), nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+class WorkflowRoutingPolicy(Base):
+    """Workspace-level, human-configured approval pathway; not an official rule determination."""
+    __tablename__ = "workflow_routing_policies"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, unique=True, index=True)
+    pathway = Column(String(40), nullable=False, default="SCRUTINY_ONLY")
+    rationale = Column(Text, nullable=False)
+    updated_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
