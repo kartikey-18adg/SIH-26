@@ -25,6 +25,7 @@ export default function ComplianceOperationsPage() {
   const [cases, setCases] = useState<any[]>([]);
   const [obligations, setObligations] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [documentsByCase, setDocumentsByCase] = useState<Record<string, any[]>>({});
   const [pathwayTemplates, setPathwayTemplates] = useState<any[]>([]);
   const [assignedPathway, setAssignedPathway] = useState<any>(null);
   const [pathwayKey, setPathwayKey] = useState('ONLY_SCRUTINY');
@@ -49,6 +50,8 @@ export default function ComplianceOperationsPage() {
       api('/cases'), api('/obligations'), api('/evc/appointments'), api('/operations/summary'), api('/workflows/pathways')
     ]);
     setCases(caseRows);
+    const documentEntries = await Promise.all(caseRows.map(async (row: any) => [row.id, await api(`/cases/${row.id}/documents`).catch(() => [])] as const));
+    setDocumentsByCase(Object.fromEntries(documentEntries));
     setObligations(obligationRows);
     setAppointments(evcRows);
     setSummary(metrics);
@@ -195,7 +198,7 @@ export default function ComplianceOperationsPage() {
             <div className="mt-2 text-xs text-[#5E5D57]">Due {item.due_date} · {item.days_remaining} day(s) · Assigned to {item.assigned_to}</div>
             {item.status !== 'VERIFIED' && item.status !== 'SUBMITTED' && (
               <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
-                <input className={field} placeholder="Existing evidence document ID" value={evidenceId[item.id] || ''} onChange={(e) => setEvidenceId((p) => ({ ...p, [item.id]: e.target.value }))} />
+                <select className={field} value={evidenceId[item.id] || ''} onChange={(e) => setEvidenceId((p) => ({ ...p, [item.id]: e.target.value }))} required><option value="">Select existing vault evidence…</option>{(documentsByCase[item.case_id] || []).map((doc: any) => <option key={doc.id} value={doc.id}>{doc.original_filename} · {doc.category} · {doc.review_status}</option>)}</select>
                 <input className={field} placeholder="Submission notes" value={evidenceNotes[item.id] || ''} onChange={(e) => setEvidenceNotes((p) => ({ ...p, [item.id]: e.target.value }))} />
                 <button className={button} disabled={busy || !evidenceId[item.id] || (evidenceNotes[item.id] || '').trim().length < 4} onClick={() => act(() => api(`/obligations/${item.id}/submit`, { method: 'POST', body: JSON.stringify({ evidence_document_id: evidenceId[item.id], notes: evidenceNotes[item.id], submitted_by: 'Institution Coordinator' }) }), 'Evidence submitted for independent verification.')}>Submit evidence</button>
               </div>
