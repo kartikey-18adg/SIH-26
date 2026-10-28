@@ -320,3 +320,20 @@ class WorkflowRoutingPolicy(Base):
     updated_by = Column(String(100), nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+class CaseWorkflowStep(Base):
+    """Auditable per-case checklist steps generated from the workspace's saved pathway."""
+    __tablename__ = "case_workflow_steps"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    case_id = Column(String(36), ForeignKey("approval_cases.id"), nullable=False, index=True)
+    pathway_snapshot = Column(String(40), nullable=False)
+    step_key = Column(String(50), nullable=False)
+    step_label = Column(String(120), nullable=False)
+    sequence = Column(Integer, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default="PENDING")
+    completion_notes = Column(Text, nullable=True)
+    completed_by = Column(String(100), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
