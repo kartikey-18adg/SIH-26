@@ -355,7 +355,8 @@ def get_case_detail(
     ws = get_or_create_default_workspace(db)
     c = db.query(ApprovalCase).filter(
         ApprovalCase.id == case_id,
-        ApprovalCase.workspace_id == ws.id
+        ApprovalCase.workspace_id == ws.id,
+        ApprovalCase.data_mode == ws.active_data_mode
     ).first()
 
     if not c:
