@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import (
     Workspace, ApprovalCase, CaseStageHistory, Institution, 
-    EvidenceDocument, ComplianceResult, Task, Alert, AuditEvent
+    EvidenceDocument, ComplianceResult, Task, Alert, AuditEvent, WorkflowPathwayAssignment
 )
 from .workspace import get_or_create_default_workspace
 from ..permissions import get_current_role, check_role_permission, ROLE_PERMISSIONS, normalize_role
@@ -20,9 +20,11 @@ def utc_now() -> datetime:
 # Allowed Stage Transitions Map
 VALID_STAGE_TRANSITIONS: Dict[str, List[str]] = {
     "DRAFT": ["INFO_COLLECTION", "DOCUMENT_REVIEW", "CLOSED"],
-    "INFO_COLLECTION": ["DOCUMENT_REVIEW", "DRAFT"],
-    "DOCUMENT_REVIEW": ["COMPLIANCE_CHECKS", "CORRECTIONS_REQUIRED", "DRAFT"],
+    "INFO_COLLECTION": ["DOCUMENT_REVIEW", "EVC", "DRAFT"],
+    "DOCUMENT_REVIEW": ["COMPLIANCE_CHECKS", "EVC", "CORRECTIONS_REQUIRED", "DRAFT"],
     "COMPLIANCE_CHECKS": ["INTERNAL_REVIEW", "CORRECTIONS_REQUIRED", "DOCUMENT_REVIEW"],
+    "EVC": ["SAC_SHC", "COMPLIANCE_CHECKS", "INTERNAL_REVIEW", "CORRECTIONS_REQUIRED"],
+    "SAC_SHC": ["INTERNAL_REVIEW", "CORRECTIONS_REQUIRED"],
     "INTERNAL_REVIEW": ["READY_FOR_SUBMISSION", "CORRECTIONS_REQUIRED", "COMPLIANCE_CHECKS", "CLOSED"],
     "CORRECTIONS_REQUIRED": ["DOCUMENT_REVIEW", "COMPLIANCE_CHECKS", "INTERNAL_REVIEW"],
     "READY_FOR_SUBMISSION": ["RECORDED_EXTERNALLY_SUBMITTED", "INTERNAL_REVIEW", "CLOSED"],
@@ -36,6 +38,8 @@ STAGE_STATUS_MAPPING: Dict[str, str] = {
     "INFO_COLLECTION": "IN_PROGRESS",
     "DOCUMENT_REVIEW": "IN_PROGRESS",
     "COMPLIANCE_CHECKS": "IN_PROGRESS",
+    "EVC": "AWAITING_REVIEW",
+    "SAC_SHC": "AWAITING_REVIEW",
     "INTERNAL_REVIEW": "AWAITING_REVIEW",
     "CORRECTIONS_REQUIRED": "NEEDS_ATTENTION",
     "READY_FOR_SUBMISSION": "COMPLETED",
@@ -43,6 +47,30 @@ STAGE_STATUS_MAPPING: Dict[str, str] = {
     "EXTERNAL_RESPONSE_RECEIVED": "IN_PROGRESS",
     "CLOSED": "COMPLETED"
 }
+
+
+def _allowed_next_stages(db: Session, case: ApprovalCase) -> List[str]:
+    """Return configured pathway next steps when present, otherwise legacy state-machine steps."""
+    assignment = db.query(WorkflowPathwayAssignment).filter_by(
+        workspace_id=case.workspace_id, case_id=case.id
+    ).first()
+    if not assignment:
+        return VALID_STAGE_TRANSITIONS.get(case.current_stage, [])
+    sequence = assignment.stage_sequence or []
+    current = case.current_stage
+    if current == "CORRECTIONS_REQUIRED":
+        prior = db.query(CaseStageHistory).filter(
+            CaseStageHistory.case_id == case.id,
+            CaseStageHistory.to_stage == "CORRECTIONS_REQUIRED"
+        ).order_by(CaseStageHistory.changed_at.desc()).first()
+        return [prior.from_stage] if prior else []
+    if current not in sequence:
+        return VALID_STAGE_TRANSITIONS.get(current, [])
+    index = sequence.index(current)
+    result = [sequence[index + 1]] if index + 1 < len(sequence) else []
+    if current not in {"READY_FOR_SUBMISSION", "CLOSED"}:
+        result.append("CORRECTIONS_REQUIRED")
+    return result
 
 # Pydantic Schemas
 class CaseCreateRequest(BaseModel):
@@ -170,7 +198,7 @@ def list_cases(
             data_mode=c.data_mode,
             created_at=c.created_at,
             updated_at=c.updated_at,
-            allowed_next_stages=VALID_STAGE_TRANSITIONS.get(c.current_stage, []),
+            allowed_next_stages=_allowed_next_stages(db, c),
             stage_history=histories,
             documents_count=len(c.documents),
             compliance_results_count=len(c.compliance_results),
@@ -403,7 +431,7 @@ def transition_case_stage(
         )
 
     # Validate transition
-    allowed = VALID_STAGE_TRANSITIONS.get(current, [])
+    allowed = _allowed_next_stages(db, c)
     if target not in allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
