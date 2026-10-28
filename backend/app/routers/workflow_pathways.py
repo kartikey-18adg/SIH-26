@@ -90,8 +90,11 @@ def assign_case_pathway(
 
     allowed_stages = {"DRAFT", "INFO_COLLECTION", "DOCUMENT_REVIEW", "EVC", "SAC_SHC",
                       "COMPLIANCE_CHECKS", "INTERNAL_REVIEW", "READY_FOR_SUBMISSION"}
-    if len(stages) < 3 or len(stages) != len(set(stages)) or any(x not in allowed_stages for x in stages):
-        raise HTTPException(status_code=400, detail="Pathway stages must be unique supported stage keys and contain at least three stages.")
+    if (len(stages) < 3 or len(stages) != len(set(stages)) or any(x not in allowed_stages for x in stages)
+            or stages[0] != "DRAFT" or stages[-1] != "READY_FOR_SUBMISSION"):
+        raise HTTPException(status_code=400, detail="Pathway stages must be unique supported stage keys, start at DRAFT, end at READY_FOR_SUBMISSION, and contain at least three stages.")
+    if "SAC_SHC" in stages and ("EVC" not in stages or stages.index("EVC") > stages.index("SAC_SHC")):
+        raise HTTPException(status_code=400, detail="SAC/SHC must follow EVC in the configured pathway.")
     if case.current_stage not in stages:
         raise HTTPException(status_code=409, detail=f"Current stage {case.current_stage} is not present in this pathway; move the case through an authorized process before assigning it.")
 
