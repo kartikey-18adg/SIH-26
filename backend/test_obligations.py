@@ -4,14 +4,17 @@ from datetime import date, datetime, timedelta, timezone
 from backend.app.database import SessionLocal
 from backend.app.models import (
     Workspace, Institution, ApprovalCase, EvidenceDocument, ComplianceObligation,
-    EVCAppointment, Alert, NotificationOutbox, AuditEvent
+    EVCAppointment, Alert, NotificationOutbox, AuditEvent, WorkflowPathwayAssignment, CaseStageHistory
 )
 from backend.app.routers.workspace import get_or_create_default_workspace
+from backend.app.routers.workflow_pathways import PathwayAssignmentRequest, assign_case_pathway
+from backend.app.routers.cases import CaseTransitionRequest, transition_case_stage
+from fastapi import HTTPException
 from backend.app.routers.obligations import (
     ObligationCreate, EvidenceSubmission, ObligationVerification,
     EVCAppointmentCreate, EVCAppointmentUpdate, create_obligation,
     submit_obligation_evidence, verify_obligation, scan_obligation_deadlines,
-    create_evc_appointment, update_evc_appointment, operational_summary
+    create_evc_appointment, update_evc_appointment, operational_summary, scan_evc_deadlines
 )
 
 def run_obligation_tests():
@@ -50,6 +53,24 @@ def run_obligation_tests():
         db.commit()
         db.refresh(case)
         db.refresh(document)
+
+        # A configured pathway must reject an out-of-sequence transition.
+        assigned_path = assign_case_pathway(
+            case.id, PathwayAssignmentRequest(pathway_key="ONLY_SCRUTINY", configured_by="Test Administrator"),
+            db, "Administrator"
+        )
+        assert assigned_path["assigned"] is True
+        try:
+            transition_case_stage(case.id, CaseTransitionRequest(to_stage="EVC",
+                reason="Intentional out-of-sequence transition test.", changed_by="Test Administrator"),
+                db, "Administrator")
+            raise AssertionError("Configured pathway should block EVC when next stage is COMPLIANCE_CHECKS")
+        except HTTPException as exc:
+            assert exc.status_code == 400
+        transitioned = transition_case_stage(case.id, CaseTransitionRequest(to_stage="COMPLIANCE_CHECKS",
+            reason="Document scrutiny completed; proceeding to compliance checks.", changed_by="Test Administrator"),
+            db, "Administrator")
+        assert transitioned.current_stage == "COMPLIANCE_CHECKS"
 
         # Create a due-today obligation and prove the scanner is idempotent.
         obligation_data = ObligationCreate(
@@ -94,6 +115,10 @@ def run_obligation_tests():
         appointment_id = appointment_result["id"]
         appointment = db.query(EVCAppointment).filter_by(id=appointment_id).first()
         assert appointment and appointment.status == "SCHEDULED"
+        evc_first_scan = scan_evc_deadlines(db, "Administrator")
+        evc_second_scan = scan_evc_deadlines(db, "Administrator")
+        assert evc_first_scan["new_alerts_created"] >= 1
+        assert evc_second_scan["new_alerts_created"] == 0, "Repeated EVC scans must not duplicate reminders"
         completed = update_evc_appointment(
             appointment_id, EVCAppointmentUpdate(status="COMPLETED",
             completion_notes="Visit completed; report awaits authorized review.", updated_by="Test Reviewer"),
@@ -118,8 +143,11 @@ def run_obligation_tests():
                 Alert.alert_key.like(f"ALERT-OBLIGATION-%-{obligation.id[:8]}")).delete(synchronize_session=False)
             db.query(ComplianceObligation).filter_by(id=obligation.id).delete(synchronize_session=False)
         if appointment:
+            db.query(Alert).filter(Alert.alert_key.like(f"ALERT-EVC-%-{appointment.id[:8]}")).delete(synchronize_session=False)
             db.query(EVCAppointment).filter_by(id=appointment.id).delete(synchronize_session=False)
         if case:
+            db.query(WorkflowPathwayAssignment).filter_by(case_id=case.id).delete(synchronize_session=False)
+            db.query(CaseStageHistory).filter_by(case_id=case.id).delete(synchronize_session=False)
             db.query(NotificationOutbox).filter(NotificationOutbox.alert_id.in_(
                 db.query(Alert.id).filter(Alert.case_id == case.id)
             )).delete(synchronize_session=False)
