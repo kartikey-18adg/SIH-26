@@ -519,3 +519,34 @@ export async function scanEVCRemindersApi() {
   if (!res.ok) await handleResponseError(res, `EVC reminder scan failed: HTTP ${res.status}`);
   return await res.json();
 }
+
+
+export type ApprovalPathway = 'SCRUTINY_ONLY' | 'SCRUTINY_EVC' | 'EVC_SAC_SHC' | 'EVC_ONLY';
+export interface WorkflowRoutingPolicy {
+  configured: boolean;
+  pathway: ApprovalPathway;
+  rationale: string;
+  updated_by: string | null;
+  updated_at: string | null;
+  is_official_rule_verified: false;
+  notice: string;
+}
+
+export async function fetchWorkflowRoutingPolicyApi(): Promise<WorkflowRoutingPolicy> {
+  const res = await fetch(`${API_BASE}/workflow-routing/policy`, {
+    cache: 'no-store',
+    headers: getAuthHeaders()
+  });
+  if (!res.ok) await handleResponseError(res, `Failed to load pathway configuration: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function saveWorkflowRoutingPolicyApi(pathway: ApprovalPathway, rationale: string): Promise<WorkflowRoutingPolicy> {
+  const res = await fetch(`${API_BASE}/workflow-routing/policy`, {
+    method: 'PUT',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ pathway, rationale })
+  });
+  if (!res.ok) await handleResponseError(res, `Failed to save pathway configuration: HTTP ${res.status}`);
+  return await res.json();
+}
