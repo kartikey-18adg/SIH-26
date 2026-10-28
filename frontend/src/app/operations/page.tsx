@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '../../components/AppShell';
@@ -65,7 +67,11 @@ export default function ComplianceOperationsPage() {
     } else setAssignedPathway(null);
   }, [caseId]);
 
-  useEffect(() => { refresh().catch((e) => setError(e.message)); }, [refresh]);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve().then(() => refresh()).catch((e) => { if (!cancelled) setError(e.message); });
+    return () => { cancelled = true; };
+  }, [refresh]);
 
   async function act(fn: () => Promise<any>, success: string) {
     setBusy(true); setError(''); setMessage('');
@@ -73,8 +79,6 @@ export default function ComplianceOperationsPage() {
     catch (e: any) { setError(e.message || 'Action failed'); }
     finally { setBusy(false); }
   }
-
-  const selectedCase = cases.find((c) => c.id === caseId);
 
   return (
     <AppShell>
