@@ -51,6 +51,22 @@ export default function WorkspacePage() {
       {/* Dynamic Metric Strip */}
       <MetricCards summary={summary} />
 
+      {/* EVC operational overview */}
+      <section className="mb-5 rounded border border-[#E2E0D8] bg-white p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-bold">EVC Operations</h2>
+            <p className="mt-0.5 text-xs text-[#5E5D57]">Visit tracking for cases explicitly routed to EVC.</p>
+          </div>
+          <a href="/evc" className="text-xs font-semibold text-[#1E3A8A] hover:underline">Open EVC queue →</a>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded border border-[#E2E0D8] bg-[#F7F7F5] p-3"><div className="text-xs text-[#5E5D57]">Waiting to schedule</div><div className="mt-1 text-xl font-bold">{summary.evc_waiting_to_schedule ?? 0}</div></div>
+          <div className="rounded border border-[#E2E0D8] bg-[#F7F7F5] p-3"><div className="text-xs text-[#5E5D57]">Scheduled visits</div><div className="mt-1 text-xl font-bold">{summary.evc_scheduled ?? 0}</div></div>
+          <div className="rounded border border-red-200 bg-red-50 p-3"><div className="text-xs text-red-800">Past scheduled time</div><div className="mt-1 text-xl font-bold text-red-900">{summary.evc_overdue ?? 0}</div></div>
+        </div>
+      </section>
+
       {/* Advanced, data-driven workflow and risk analytics */}
       <OperationsInsights summary={summary} />
 
