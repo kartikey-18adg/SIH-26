@@ -289,3 +289,22 @@ class AuditEvent(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now)
 
     workspace = relationship("Workspace", back_populates="audit_events")
+
+
+class EVCVisit(Base):
+    """Explicitly routed EVC visit; never inferred from case stage alone."""
+    __tablename__ = "evc_visits"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    case_id = Column(String(36), ForeignKey("approval_cases.id"), nullable=False, index=True)
+    routing_basis = Column(Text, nullable=False)
+    status = Column(String(30), nullable=False, default="WAITING_TO_SCHEDULE")
+    scheduled_at = Column(DateTime(timezone=True), nullable=True)
+    venue = Column(String(255), nullable=True)
+    assigned_team = Column(String(255), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    completion_notes = Column(Text, nullable=True)
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
