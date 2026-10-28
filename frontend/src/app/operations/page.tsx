@@ -103,6 +103,28 @@ export default function ComplianceOperationsPage() {
       )}
 
       <section className="mb-6 rounded border border-[#E2E0D8] bg-white p-4">
+        <h2 className="mb-2 text-sm font-bold">Configure the application pathway</h2>
+        <p className="mb-3 text-xs text-[#5E5D57]">Select an approved route for the selected case. Once assigned, case-stage transitions are restricted to the configured sequence. Custom stage rules remain institution-configurable and require regulatory verification.</p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <label className="text-xs font-semibold">Application
+            <select className={field + ' mt-1'} value={caseId} onChange={(e) => setCaseId(e.target.value)} required>
+              {cases.map((c) => <option key={c.id} value={c.id}>{c.case_reference} — {c.institution_name}</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-semibold">Pathway template
+            <select className={field + ' mt-1'} value={pathwayKey} onChange={(e) => setPathwayKey(e.target.value)}>
+              {pathwayTemplates.filter((x) => !x.is_custom).map((x) => <option key={x.pathway_key} value={x.pathway_key}>{x.name}</option>)}
+            </select>
+          </label>
+          <div className="flex items-end"><button className={button} disabled={busy || !caseId} onClick={() => act(() => api(`/workflows/cases/${caseId}/pathway`, { method: 'POST', body: JSON.stringify({ pathway_key: pathwayKey, configured_by: 'Administrator' }) }), 'Workflow pathway assigned. Next-stage options are now constrained by the selected sequence.')}>Assign pathway</button></div>
+        </div>
+        {assignedPathway?.assigned && <div className="mt-3 rounded border border-[#C6C4BA] bg-[#F7F7F5] p-3">
+          <p className="text-xs font-semibold">Active route: {assignedPathway.pathway_name}</p>
+          <p className="mt-1 text-xs text-[#5E5D57]">{assignedPathway.stages.join(' → ')}</p>
+        </div>}
+      </section>
+
+      <section className="mb-6 rounded border border-[#E2E0D8] bg-white p-4">
         <h2 className="mb-3 text-sm font-bold">Create time-bound obligation</h2>
         <form className="grid grid-cols-1 gap-3 md:grid-cols-2" onSubmit={(e) => {
           e.preventDefault();
