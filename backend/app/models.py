@@ -358,3 +358,19 @@ class WorkflowPathwayAssignment(Base):
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
     case = relationship("ApprovalCase")
+
+
+class CommitteeReviewRecord(Base):
+    """Recorded SAC/SHC recommendation; not an AICTE statutory approval."""
+    __tablename__ = "committee_review_records"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    case_id = Column(String(36), ForeignKey("approval_cases.id"), nullable=False, index=True)
+    committee_type = Column(String(10), nullable=False)
+    decision = Column(String(40), nullable=False)
+    notes = Column(Text, nullable=False)
+    recorded_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    case = relationship("ApprovalCase")
