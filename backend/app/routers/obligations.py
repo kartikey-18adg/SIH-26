@@ -1,7 +1,10 @@
 from datetime import date, datetime, timezone
+import csv
+import io
 from typing import Optional
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -446,6 +449,61 @@ def scan_evc_deadlines(db: Session = Depends(get_db), role: str = Depends(get_cu
         created += 1
     db.commit()
     return {"scanned_appointments": len(appointments), "new_alerts_created": created}
+
+
+@router.get("/operations/export.csv")
+def export_operations_report(db: Session = Depends(get_db)):
+    """Download a unified CSV snapshot for pendency, obligations, EVC, and document validity."""
+    ws = get_or_create_default_workspace(db)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Report Type", "Case Reference", "Institution", "Stage / Status", "Due / Scheduled / Expiry Date", "Age / Days Remaining", "Responsible Person", "Details"])
+    cases = db.query(ApprovalCase).filter(
+        ApprovalCase.workspace_id == ws.id, ApprovalCase.data_mode == ws.active_data_mode
+    ).all()
+    today = date.today()
+    for case in cases:
+        latest_history = db.query(CaseStageHistory).filter(
+            CaseStageHistory.case_id == case.id, CaseStageHistory.to_stage == case.current_stage
+        ).order_by(CaseStageHistory.changed_at.desc()).first()
+        started = latest_history.changed_at.date() if latest_history else (case.created_at.date() if case.created_at else today)
+        writer.writerow(["PENDENCY", case.case_reference, case.institution.legal_name if case.institution else "",
+            case.current_stage, case.target_date.isoformat(), (today - started).days,
+            case.internal_owner_name, f"Target deadline delta: {(case.target_date - today).days} day(s)"])
+    obligations = db.query(ComplianceObligation).join(ApprovalCase).filter(
+        ComplianceObligation.workspace_id == ws.id, ApprovalCase.data_mode == ws.active_data_mode
+    ).all()
+    for item in obligations:
+        days_left = (item.due_date - today).days
+        writer.writerow(["UNDERTAKING", item.case.case_reference if item.case else "",
+            item.case.institution.legal_name if item.case and item.case.institution else "", item.status,
+            item.due_date.isoformat(), days_left, item.assigned_to,
+            f"{item.title}; overdue={days_left < 0}; verified_by={item.verified_by or ''}"])
+    appointments = db.query(EVCAppointment).join(ApprovalCase).filter(
+        EVCAppointment.workspace_id == ws.id, ApprovalCase.data_mode == ws.active_data_mode
+    ).all()
+    for item in appointments:
+        days_left = (item.scheduled_at.date() - today).days
+        writer.writerow(["EVC", item.case.case_reference if item.case else "",
+            item.case.institution.legal_name if item.case and item.case.institution else "", item.status,
+            item.scheduled_at.isoformat(), days_left, item.scheduled_by,
+            f"{item.committee_name}; completion_notes={item.completion_notes or ''}"])
+    case_ids = [case.id for case in cases]
+    documents = db.query(EvidenceDocument).filter(EvidenceDocument.case_id.in_(case_ids)).all() if case_ids else []
+    for doc in documents:
+        if not doc.expiry_date:
+            continue
+        days_left = (doc.expiry_date - today).days
+        case = next((x for x in cases if x.id == doc.case_id), None)
+        writer.writerow(["DOCUMENT_VALIDITY", case.case_reference if case else "",
+            case.institution.legal_name if case and case.institution else "", doc.review_status,
+            doc.expiry_date.isoformat(), days_left, doc.uploaded_by,
+            f"{doc.original_filename}; category={doc.category}; expired={days_left < 0}"])
+    writer.writerow([])
+    writer.writerow(["Disclaimer", "Internal workflow report only; not an official AICTE decision or approval certificate."])
+    output.seek(0)
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=aiclear_operations_report.csv"})
 
 @router.get("/operations/summary")
 def operational_summary(db: Session = Depends(get_db)):
