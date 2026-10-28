@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from backend.app.database import SessionLocal
+from backend.app.database import SessionLocal, Base, engine
 from backend.app.models import (
     Workspace, Institution, ApprovalCase, EvidenceDocument, ComplianceObligation,
     EVCAppointment, Alert, NotificationOutbox, AuditEvent, WorkflowPathwayAssignment, CaseStageHistory
@@ -10,6 +10,8 @@ from backend.app.routers.workspace import get_or_create_default_workspace
 from backend.app.routers.workflow_pathways import PathwayAssignmentRequest, assign_case_pathway
 from backend.app.routers.cases import CaseTransitionRequest, transition_case_stage
 from fastapi import HTTPException
+
+Base.metadata.create_all(bind=engine)
 from backend.app.routers.obligations import (
     ObligationCreate, EvidenceSubmission, ObligationVerification,
     EVCAppointmentCreate, EVCAppointmentUpdate, create_obligation,
