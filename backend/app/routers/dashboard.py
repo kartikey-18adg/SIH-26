@@ -1,11 +1,11 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..database import get_db
 from ..models import (
     Workspace, ApprovalCase, Alert, Task, ComplianceResult, 
-    AuditEvent, Institution
+    AuditEvent, Institution, EVCVisit
 )
 from ..schemas import (
     DashboardSummaryResponse, CaseSummaryItem, AlertSummaryItem, 
@@ -64,6 +64,27 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     
     open_alerts = [a for a in alerts if a.status == "OPEN"]
     open_high_priority_alerts = sum(1 for a in open_alerts if a.severity in ("HIGH", "CRITICAL"))
+
+    # EVC operational metrics, scoped to the active workspace and data mode.
+    evc_visits = db.query(EVCVisit).join(
+        ApprovalCase, EVCVisit.case_id == ApprovalCase.id
+    ).filter(
+        EVCVisit.workspace_id == ws.id,
+        ApprovalCase.workspace_id == ws.id,
+        ApprovalCase.data_mode == mode,
+        ApprovalCase.id.in_(case_ids) if case_ids else False,
+    ).all()
+    evc_waiting_to_schedule = sum(1 for visit in evc_visits if visit.status == "WAITING_TO_SCHEDULE")
+    evc_scheduled = sum(1 for visit in evc_visits if visit.status == "SCHEDULED")
+    now_utc = datetime.now(timezone.utc)
+    evc_overdue = 0
+    for visit in evc_visits:
+        if visit.status == "SCHEDULED" and visit.scheduled_at:
+            scheduled_at = visit.scheduled_at
+            if scheduled_at.tzinfo is None:
+                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            if scheduled_at < now_utc:
+                evc_overdue += 1
 
     # Stage Breakdown
     stage_labels = {
@@ -170,6 +191,9 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
         open_high_priority_alerts=open_high_priority_alerts,
         upcoming_deadlines_count=upcoming_deadlines_count,
         compliance_items_needing_review=compliance_items_needing_review,
+        evc_waiting_to_schedule=evc_waiting_to_schedule,
+        evc_scheduled=evc_scheduled,
+        evc_overdue=evc_overdue,
         stage_breakdown=stage_breakdown,
         recent_cases=recent_cases,
         open_alerts=open_alerts_summary,
