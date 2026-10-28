@@ -50,7 +50,7 @@ ROLE_PERMISSIONS = {
         "can_scan_escalations": False,
         "can_create_tasks": True,
         "can_update_tasks": True,
-        "allowed_transition_stages": ["DOCUMENT_REVIEW"]
+        "allowed_transition_stages": ["DOCUMENT_REVIEW", "EVC", "SAC_SHC"]
     },
     "Compliance Officer": {
         "description": "Regulatory compliance auditor. Evaluates APH 2024–27 normative checks, records human overrides with justification, and resolves compliance deficiencies.",
