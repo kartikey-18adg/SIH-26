@@ -96,6 +96,9 @@ class DashboardSummaryResponse(BaseModel):
     open_high_priority_alerts: int
     upcoming_deadlines_count: int
     compliance_items_needing_review: int
+    evc_waiting_to_schedule: int = 0
+    evc_scheduled: int = 0
+    evc_overdue: int = 0
     stage_breakdown: List[StageBreakdown]
     recent_cases: List[CaseSummaryItem]
     open_alerts: List[AlertSummaryItem]
