@@ -23,6 +23,7 @@ export const Header: React.FC<HeaderProps> = ({ activeMode, onOpenSettings, onOp
     { label: 'Compliance Queue', href: '/compliance' },
     { label: 'Alert Centre', href: '/alerts' },
     { label: 'Task Queue', href: '/tasks' },
+    { label: 'EVC Scheduling', href: '/evc' },
     { label: 'Audit Trail', href: '/audit' },
     { label: 'Evidence Lineage', href: '/lineage' },
     { label: 'Readiness Simulator', href: '/readiness-simulator' },
