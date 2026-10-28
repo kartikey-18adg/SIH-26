@@ -31,6 +31,9 @@ export default function ComplianceOperationsPage() {
   const [pathwayTemplates, setPathwayTemplates] = useState<any[]>([]);
   const [assignedPathway, setAssignedPathway] = useState<any>(null);
   const [pathwayKey, setPathwayKey] = useState('ONLY_SCRUTINY');
+  const [committeeType, setCommitteeType] = useState('SAC');
+  const [committeeDecision, setCommitteeDecision] = useState('RECOMMEND');
+  const [committeeNotes, setCommitteeNotes] = useState('');
   const [summary, setSummary] = useState<any>(null);
   const [caseId, setCaseId] = useState('');
   const [title, setTitle] = useState('Submit signed undertaking');
@@ -72,6 +75,8 @@ export default function ComplianceOperationsPage() {
     Promise.resolve().then(() => refresh()).catch((e) => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
   }, [refresh]);
+
+  const selectedCase = cases.find((c) => c.id === caseId);
 
   async function act(fn: () => Promise<any>, success: string) {
     setBusy(true); setError(''); setMessage('');
@@ -155,6 +160,28 @@ export default function ComplianceOperationsPage() {
           <p className="mt-1 text-xs text-[#5E5D57]">{assignedPathway.stages.join(' → ')}</p>
         </div>}
       </section>
+
+      {selectedCase?.current_stage === 'SAC_SHC' && <section className="mb-6 rounded border border-[#E2E0D8] bg-white p-4">
+        <h2 className="mb-2 text-sm font-bold">Record SAC / SHC committee recommendation</h2>
+        <p className="mb-3 text-xs text-[#5E5D57]">An authorized committee member must record the recommendation and rationale before the workflow can advance to internal review. This record is not a statutory AICTE approval.</p>
+        <form className="grid grid-cols-1 gap-3 md:grid-cols-3" onSubmit={(e) => {
+          e.preventDefault();
+          act(() => api(`/workflows/cases/${caseId}/committee-reviews`, { method: 'POST', body: JSON.stringify({
+            committee_type: committeeType, decision: committeeDecision, notes: committeeNotes, recorded_by: 'Committee Reviewer'
+          }) }), 'Committee recommendation recorded in the audit trail.');
+        }}>
+          <label className="text-xs font-semibold">Committee
+            <select className={field + ' mt-1'} value={committeeType} onChange={(e) => setCommitteeType(e.target.value)}><option value="SAC">SAC</option><option value="SHC">SHC</option></select>
+          </label>
+          <label className="text-xs font-semibold">Recommendation
+            <select className={field + ' mt-1'} value={committeeDecision} onChange={(e) => setCommitteeDecision(e.target.value)}><option value="RECOMMEND">Recommend internal review</option><option value="RETURN_FOR_CORRECTION">Return for corrections</option><option value="NOT_RECOMMEND">Do not recommend</option></select>
+          </label>
+          <label className="text-xs font-semibold">Reason / notes
+            <input className={field + ' mt-1'} value={committeeNotes} onChange={(e) => setCommitteeNotes(e.target.value)} minLength={4} required />
+          </label>
+          <div><button className={button} disabled={busy || committeeNotes.trim().length < 4}>Record recommendation</button></div>
+        </form>
+      </section>}
 
       <section className="mb-6 rounded border border-[#E2E0D8] bg-white p-4">
         <h2 className="mb-3 text-sm font-bold">Create time-bound obligation</h2>
