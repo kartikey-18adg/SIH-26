@@ -1,10 +1,12 @@
 import sys
 import os
+import uuid
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from backend.app.database import SessionLocal
-from backend.app.models import Workspace, ApprovalCase, Alert, AuditEvent, Institution
+from backend.app.models import Workspace, ApprovalCase, Alert, AuditEvent, Institution, IngestionBatch
 from backend.app.routers.workspace import (
     get_or_create_default_workspace, switch_data_mode, reset_demo_workspace
 )
@@ -17,9 +19,49 @@ from backend.app.routers.reports import get_case_review_pack
 
 def run_phase_i_tests():
     db = SessionLocal()
+    fixture_batch_id = None
+    fixture_institution_id = None
+    fixture_case_id = None
     try:
         print("=== AICLEAR PHASE I: MODE BOUNDARY HARDENING & SHOWCASE VERIFICATION ===")
         ws = get_or_create_default_workspace(db)
+
+        # Make this test self-contained on a fresh CI database. The fixture is
+        # explicitly provenance-backed IMPORTED data and is removed in finally.
+        eligible_imported = db.query(ApprovalCase).join(Institution, ApprovalCase.institution_id == Institution.id).filter(
+            ApprovalCase.workspace_id == ws.id, ApprovalCase.data_mode == "IMPORTED",
+            Institution.data_mode == "IMPORTED", Institution.provenance_batch_id.isnot(None)
+        ).count()
+        if eligible_imported == 0:
+            suffix = uuid.uuid4().hex[:8]
+            batch = IngestionBatch(
+                workspace_id=ws.id, batch_reference=f"TEST-IMPORT-{suffix}",
+                original_filename="phase_i_fixture.csv", file_sha256="b" * 64,
+                total_records=1, successful_records=1, failed_records=0,
+                status="COMMITTED", validation_report={}, created_by="Phase I Test"
+            )
+            db.add(batch)
+            db.flush()
+            institution = Institution(
+                workspace_id=ws.id, legal_name=f"Imported Test Institute {suffix}",
+                institution_type="PRIVATE_SELF_FINANCED", state="Test State", district="Test District",
+                data_mode="IMPORTED", provenance_batch_id=batch.id
+            )
+            db.add(institution)
+            db.flush()
+            imported_case = ApprovalCase(
+                workspace_id=ws.id, institution_id=institution.id,
+                case_reference=f"AICTE-IMPORTED-TEST-{suffix}", workflow_type="EXTENSION_OF_APPROVAL",
+                academic_period="2026-2027", current_stage="DRAFT", status="IN_PROGRESS",
+                priority="LOW", internal_owner_name="Imported Test Owner",
+                target_date=date.today() + timedelta(days=30), data_mode="IMPORTED",
+                created_by="Phase I Test"
+            )
+            db.add(imported_case)
+            db.commit()
+            fixture_batch_id = batch.id
+            fixture_institution_id = institution.id
+            fixture_case_id = imported_case.id
 
         # -------------------------------------------------------------
         # TEST 1: Strict Mode Boundary Isolation (DEMO Mode)
@@ -162,6 +204,13 @@ def run_phase_i_tests():
         print("=== ALL PHASE I VERIFICATION TESTS PASSED SUCCESSFULLY! ===")
 
     finally:
+        if fixture_case_id:
+            db.query(ApprovalCase).filter(ApprovalCase.id == fixture_case_id).delete(synchronize_session=False)
+        if fixture_institution_id:
+            db.query(Institution).filter(Institution.id == fixture_institution_id).delete(synchronize_session=False)
+        if fixture_batch_id:
+            db.query(IngestionBatch).filter(IngestionBatch.id == fixture_batch_id).delete(synchronize_session=False)
+        db.commit()
         db.close()
 
 if __name__ == "__main__":
