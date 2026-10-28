@@ -4,10 +4,10 @@ from datetime import date, datetime, timedelta, timezone
 from backend.app.database import SessionLocal, Base, engine
 from backend.app.models import (
     Workspace, Institution, ApprovalCase, EvidenceDocument, ComplianceObligation,
-    EVCAppointment, Alert, NotificationOutbox, AuditEvent, WorkflowPathwayAssignment, CaseStageHistory
+    EVCAppointment, Alert, NotificationOutbox, AuditEvent, WorkflowPathwayAssignment, CaseStageHistory, CommitteeReviewRecord
 )
 from backend.app.routers.workspace import get_or_create_default_workspace
-from backend.app.routers.workflow_pathways import PathwayAssignmentRequest, assign_case_pathway
+from backend.app.routers.workflow_pathways import PathwayAssignmentRequest, assign_case_pathway, CommitteeReviewRequest, record_committee_review
 from backend.app.routers.cases import CaseTransitionRequest, transition_case_stage
 from fastapi import HTTPException
 
@@ -25,6 +25,7 @@ def run_obligation_tests():
     case = None
     obligation = None
     appointment = None
+    committee_review = None
     workspace = None
     original_mode = None
     try:
@@ -61,7 +62,7 @@ def run_obligation_tests():
 
         # A configured pathway rejects out-of-sequence movement and incomplete document review.
         assigned_path = assign_case_pathway(
-            case.id, PathwayAssignmentRequest(pathway_key="SCRUTINY_EVC", configured_by="Test Administrator"),
+            case.id, PathwayAssignmentRequest(pathway_key="CUSTOM_APH", pathway_name="Test EVC + SAC/SHC", stages=["DRAFT", "INFO_COLLECTION", "DOCUMENT_REVIEW", "EVC", "SAC_SHC", "INTERNAL_REVIEW", "READY_FOR_SUBMISSION"], configured_by="Test Administrator"),
             db, "Administrator"
         )
         assert assigned_path["assigned"] is True
@@ -141,10 +142,28 @@ def run_obligation_tests():
         )
         assert completed["status"] == "COMPLETED"
         assert completed["completed_at"] is not None
-        moved_after_evc = transition_case_stage(case.id, CaseTransitionRequest(to_stage="COMPLIANCE_CHECKS",
-            reason="EVC visit completed and recorded; proceed to compliance checks.", changed_by="Test Administrator"),
+        moved_after_evc = transition_case_stage(case.id, CaseTransitionRequest(to_stage="SAC_SHC",
+            reason="EVC visit completed and recorded; proceed to committee review.", changed_by="Test Administrator"),
             db, "Administrator")
-        assert moved_after_evc.current_stage == "COMPLIANCE_CHECKS"
+        assert moved_after_evc.current_stage == "SAC_SHC"
+        try:
+            transition_case_stage(case.id, CaseTransitionRequest(to_stage="INTERNAL_REVIEW",
+                reason="Intentional missing committee record test.", changed_by="Test Administrator"),
+                db, "Administrator")
+            raise AssertionError("SAC/SHC gate should require a recorded recommendation")
+        except HTTPException as exc:
+            assert exc.status_code == 409
+        review_result = record_committee_review(
+            case.id, CommitteeReviewRequest(committee_type="SAC", decision="RECOMMEND",
+            notes="Committee recommends progression to internal review.", recorded_by="Test Committee"),
+            db, "Reviewer"
+        )
+        committee_review = db.query(CommitteeReviewRecord).filter_by(id=review_result["id"]).first()
+        assert committee_review is not None
+        moved_after_committee = transition_case_stage(case.id, CaseTransitionRequest(to_stage="INTERNAL_REVIEW",
+            reason="SAC recommendation recorded; proceed to internal review.", changed_by="Test Administrator"),
+            db, "Administrator")
+        assert moved_after_committee.current_stage == "INTERNAL_REVIEW"
 
         summary = operational_summary(db)
         assert "stage_pendency" in summary and "obligations_pending" in summary and "evc_scheduled" in summary
@@ -166,8 +185,9 @@ def run_obligation_tests():
             )).delete(synchronize_session=False)
             db.query(Alert).filter(Alert.case_id == case.id).delete(synchronize_session=False)
             db.query(AuditEvent).filter(AuditEvent.entity_id.in_(
-                [x for x in [case.id, obligation.id if obligation else None, appointment.id if appointment else None] if x]
+                [x for x in [case.id, obligation.id if obligation else None, appointment.id if appointment else None, committee_review.id if committee_review else None] if x]
             )).delete(synchronize_session=False)
+            db.query(CommitteeReviewRecord).filter_by(case_id=case.id).delete(synchronize_session=False)
             db.query(WorkflowPathwayAssignment).filter_by(case_id=case.id).delete(synchronize_session=False)
             db.query(CaseStageHistory).filter_by(case_id=case.id).delete(synchronize_session=False)
             db.query(EvidenceDocument).filter(EvidenceDocument.case_id == case.id).delete(synchronize_session=False)
