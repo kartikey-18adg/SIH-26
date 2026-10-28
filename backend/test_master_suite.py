@@ -41,13 +41,9 @@ def main():
     print("\n")
 
     print("=====================================================================")
-    print("   ALL PHASES (A THROUGH I) VERIFIED 100% OPERATIONAL & COMPLIANT!   ")
+    print("   ALL PHASES PLUS UNDERTAKINGS/EVC TESTS COMPLETED   ")
     print("=====================================================================")
 
 if __name__ == "__main__":
     main()
 
-
-# Additional lifecycle coverage for time-bound undertakings and EVC operations.
-if __name__ == "__main__":
-    run_obligation_tests()
