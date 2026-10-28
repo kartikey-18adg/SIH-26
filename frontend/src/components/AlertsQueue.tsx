@@ -10,6 +10,7 @@ import {
   resolveAlertApi
 } from '../services/api';
 import { NotificationOutboxModal } from './NotificationOutboxModal';
+import { fetchCases } from '../services/api';
 import { useWorkspace } from '../context/WorkspaceContext';
 
 interface AlertsQueueProps {
@@ -25,6 +26,8 @@ export const AlertsQueue: React.FC<AlertsQueueProps> = ({
 }) => {
   const { activeRole, canPerform } = useWorkspace();
   const [alertsList, setAlertsList] = useState<AlertSummaryItem[]>(initialAlerts);
+  const [casesForRiskPlot, setCasesForRiskPlot] = useState<Array<{ id: string; case_reference: string; target_date?: string | null; priority?: string; current_stage?: string; status?: string }>>([]);
+  const [riskPlotError, setRiskPlotError] = useState(false);
   const [statusTab, setStatusTab] = useState<'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'ALL'>('OPEN');
   const [severityFilter, setSeverityFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL');
   
@@ -64,6 +67,24 @@ export const AlertsQueue: React.FC<AlertsQueueProps> = ({
   useEffect(() => {
     loadAlerts();
   }, [statusTab, severityFilter, initialAlerts]);
+
+  // Load cases independently from the alert list. The chart needs case target
+  // dates and priorities; without this request it will remain permanently empty.
+  useEffect(() => {
+    let cancelled = false;
+    setRiskPlotError(false);
+    fetchCases()
+      .then((data: any[]) => {
+        if (!cancelled) setCasesForRiskPlot(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCasesForRiskPlot([]);
+          setRiskPlotError(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleScan = async () => {
     setScanning(true);
@@ -228,6 +249,66 @@ export const AlertsQueue: React.FC<AlertsQueueProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Priority vs deadline scatterplot */}
+      <section className="border-b border-[#E2E0D8] bg-white px-4 py-4">
+        <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#1A1917]">Priority vs. deadline</h4>
+            <p className="mt-1 text-[11px] text-[#5E5D57]">Each dot is an alert linked to a case with a target date. This shows case priority, not a measured risk score.</p>
+          </div>
+          <span className="text-[10px] text-[#77756C]">Based on current case target dates</span>
+        </div>
+        {riskPlotError ? (
+          <p className="py-4 text-center text-xs text-[#5E5D57]">Deadline data could not be loaded. The alert queue is still available below.</p>
+        ) : (() => {
+          const priorityLevel: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+          const severityLevel: Record<string, number> = { INFO: 1, LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+          const casesByRef = new Map(casesForRiskPlot.map(item => [item.case_reference, item]));
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const points = alertsList.flatMap(alert => {
+            const caseItem = alert.case_reference ? casesByRef.get(alert.case_reference) : undefined;
+            if (!caseItem?.target_date || !Number.isFinite(new Date(caseItem.target_date).getTime())) return [];
+            const target = new Date(caseItem.target_date);
+            const days = Math.round((new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime() - today.getTime()) / 86400000);
+            const priority = priorityLevel[(caseItem.priority || '').toUpperCase()];
+            const severity = severityLevel[(alert.severity || '').toUpperCase()];
+            return [{ alert, caseItem, days, level: priority || severity || 1, priority: Boolean(priority) }];
+          });
+          const minDay = Math.min(-30, ...points.map(point => point.days));
+          const maxDay = Math.max(30, ...points.map(point => point.days));
+          const x = (days: number) => 8 + ((days - minDay) / Math.max(1, maxDay - minDay)) * 84;
+          const y = (level: number) => 88 - ((level - 1) / 3) * 76;
+          return points.length === 0 ? (
+            <p className="py-4 text-center text-xs text-[#5E5D57]">{casesForRiskPlot.length === 0 ? 'Loading case data or no linked cases are available.' : 'No alerts with linked cases and target dates match the current filters.'}</p>
+          ) : (
+            <>
+              <div className="relative z-0 mt-3 h-48 rounded border border-[#E2E0D8] bg-[#FBFBF9] sm:h-56">
+                {[1,2,3,4].map(level => <div key={level} className="absolute left-0 right-0 border-t border-dashed border-[#E2E0D8]" style={{ top: `${y(level)}%` }} />)}
+                <div className="absolute bottom-0 left-[8%] right-[8%] border-t border-[#A8A69E]" />
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 -rotate-90 text-[9px] text-[#77756C]">Priority</div>
+                {points.map((point, index) => {
+                  const color = point.days < 0 ? '#B42318' : point.level >= 3 ? '#C27803' : '#1E3A8A';
+                  return <button key={point.alert.id} type="button" onClick={() => point.alert.case_reference && onSelectCaseRef(point.alert.case_reference)} title={`${point.alert.title} · ${point.caseItem.case_reference} · ${point.days < 0 ? `${Math.abs(point.days)} days overdue` : point.days === 0 ? 'Due today' : `${point.days} days until target date`} · ${point.priority ? `Priority: ${point.caseItem.priority}` : `Alert severity: ${point.alert.severity}`}`} aria-label={`Open case ${point.caseItem.case_reference}`} className="absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-sm hover:scale-150 focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-[#1E3A8A]" style={{ left: `${x(point.days)}%`, top: `${y(point.level)}%`, backgroundColor: color, zIndex: index + 1 }} />;
+                })}
+                <span className="absolute bottom-1 left-[8%] text-[9px] text-[#77756C]">{minDay}d</span>
+                <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[9px] text-[#77756C]">Today</span>
+                <span className="absolute bottom-1 right-[8%] text-[9px] text-[#77756C]">+{maxDay}d</span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#5E5D57]">
+                <div className="flex flex-wrap gap-3">
+                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#B42318]" />Overdue</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#C27803]" />Higher priority, not overdue</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#1E3A8A]" />Upcoming</span>
+                </div>
+                <span>{points.length} alert(s) plotted</span>
+              </div>
+              {!points.some(point => point.priority) && <p className="mt-2 text-[10px] text-[#855304]">Case priority is unavailable for these records, so vertical position uses alert severity instead.</p>}
+            </>
+          );
+        })()}
+      </section>
 
       {/* Alerts List */}
       <div className="divide-y divide-[#E2E0D8] max-h-96 overflow-y-auto">
