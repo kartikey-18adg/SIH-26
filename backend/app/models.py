@@ -317,6 +317,9 @@ class ComplianceObligation(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
+    case = relationship("ApprovalCase")
+    evidence_document = relationship("EvidenceDocument")
+
 
 class EVCAppointment(Base):
     """EVC scheduling and completion tracking; scheduling never represents a statutory decision."""
@@ -335,3 +338,5 @@ class EVCAppointment(Base):
     completed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    case = relationship("ApprovalCase")
