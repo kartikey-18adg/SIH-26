@@ -25,9 +25,12 @@ def run_obligation_tests():
     case = None
     obligation = None
     appointment = None
+    workspace = None
+    original_mode = None
     try:
         print("=== UNDERTAKINGS, EVC SCHEDULING & OPERATIONS TESTS ===")
         ws = get_or_create_default_workspace(db)
+        workspace = ws
         original_mode = ws.active_data_mode
         ws.active_data_mode = "DEMO"
         institution = Institution(
@@ -151,29 +154,30 @@ def run_obligation_tests():
         ).count()
         assert audit_count >= 4, "Create, submission, verification and EVC changes must be audited"
         print("[PASSED] Obligation lifecycle, evidence validation, idempotent reminders, EVC scheduling/completion, metrics and audit trail.")
-        ws.active_data_mode = original_mode
         db.commit()
     finally:
-        if obligation:
-            db.query(Alert).filter(Alert.case_id == obligation.case_id,
-                Alert.alert_key.like(f"ALERT-OBLIGATION-%-{obligation.id[:8]}")).delete(synchronize_session=False)
-            db.query(ComplianceObligation).filter_by(id=obligation.id).delete(synchronize_session=False)
-        if appointment:
-            db.query(Alert).filter(Alert.alert_key.like(f"ALERT-EVC-%-{appointment.id[:8]}")).delete(synchronize_session=False)
-            db.query(EVCAppointment).filter_by(id=appointment.id).delete(synchronize_session=False)
         if case:
-            db.query(WorkflowPathwayAssignment).filter_by(case_id=case.id).delete(synchronize_session=False)
-            db.query(CaseStageHistory).filter_by(case_id=case.id).delete(synchronize_session=False)
             db.query(NotificationOutbox).filter(NotificationOutbox.alert_id.in_(
                 db.query(Alert.id).filter(Alert.case_id == case.id)
             )).delete(synchronize_session=False)
             db.query(Alert).filter(Alert.case_id == case.id).delete(synchronize_session=False)
+            db.query(AuditEvent).filter(AuditEvent.entity_id.in_(
+                [x for x in [case.id, obligation.id if obligation else None, appointment.id if appointment else None] if x]
+            )).delete(synchronize_session=False)
+            db.query(WorkflowPathwayAssignment).filter_by(case_id=case.id).delete(synchronize_session=False)
+            db.query(CaseStageHistory).filter_by(case_id=case.id).delete(synchronize_session=False)
             db.query(EvidenceDocument).filter(EvidenceDocument.case_id == case.id).delete(synchronize_session=False)
-            db.query(AuditEvent).filter(AuditEvent.entity_id == case.id).delete(synchronize_session=False)
+            inst_id = case.institution_id
             db.delete(case)
-            inst = db.query(Institution).filter(Institution.id == case.institution_id).first()
+            inst = db.query(Institution).filter(Institution.id == inst_id).first()
             if inst:
                 db.delete(inst)
+        if obligation:
+            db.query(ComplianceObligation).filter_by(id=obligation.id).delete(synchronize_session=False)
+        if appointment:
+            db.query(EVCAppointment).filter_by(id=appointment.id).delete(synchronize_session=False)
+        if workspace is not None and original_mode is not None:
+            workspace.active_data_mode = original_mode
         db.commit()
         db.close()
 
