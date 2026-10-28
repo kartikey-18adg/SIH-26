@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import ApprovalCase, AuditEvent, EVCVisit
+from ..models import ApprovalCase, Alert, AuditEvent, EVCVisit, NotificationOutbox
 from ..permissions import get_current_role, check_role_permission
 from .workspace import get_or_create_default_workspace
 
@@ -238,3 +238,106 @@ def complete_evc_visit(
     db.refresh(visit)
     case = db.query(ApprovalCase).filter(ApprovalCase.id == visit.case_id).first()
     return _format(visit, case)
+
+
+@router.post("/scan-reminders")
+def scan_evc_reminders(
+    db: Session = Depends(get_db),
+    current_role: str = Depends(get_current_role),
+):
+    """Create idempotent in-app alerts for upcoming and overdue EVC visits.
+
+    Email entries are explicitly marked simulated; this endpoint does not send real email.
+    Run this endpoint periodically from an authorized scheduler or operator.
+    """
+    check_role_permission(current_role, ["Administrator", "Compliance Officer"], "EVC reminder scanning")
+    ws = get_or_create_default_workspace(db)
+    now = utc_now()
+    horizon = now + timedelta(days=7)
+    visits = db.query(EVCVisit, ApprovalCase).join(
+        ApprovalCase, EVCVisit.case_id == ApprovalCase.id
+    ).filter(
+        EVCVisit.workspace_id == ws.id,
+        ApprovalCase.workspace_id == ws.id,
+        ApprovalCase.data_mode == ws.active_data_mode,
+        EVCVisit.status == "SCHEDULED",
+        EVCVisit.scheduled_at.isnot(None),
+    ).all()
+
+    created = 0
+    updated = 0
+    notifications = 0
+    for visit, case in visits:
+        scheduled = visit.scheduled_at
+        if scheduled.tzinfo is None:
+            scheduled = scheduled.replace(tzinfo=timezone.utc)
+        is_overdue = scheduled < now
+        is_upcoming = now <= scheduled <= horizon
+        if not is_overdue and not is_upcoming:
+            continue
+
+        key = f"EVC-{'OVERDUE' if is_overdue else 'UPCOMING'}-{visit.id}"
+        severity = "CRITICAL" if is_overdue else "HIGH"
+        level = 2 if is_overdue else 1
+        title = (
+            f"EVC Visit Overdue: {case.case_reference}"
+            if is_overdue else f"EVC Visit Coming Up: {case.case_reference}"
+        )
+        explanation = (
+            f"The scheduled EVC visit for {case.case_reference} was set for "
+            f"{scheduled.isoformat()} and has passed without being marked complete. "
+            "Confirm the visit status or reschedule with a recorded reason."
+            if is_overdue else
+            f"The EVC visit for {case.case_reference} is scheduled for "
+            f"{scheduled.isoformat()}. Confirm team and venue readiness."
+        )
+        alert = db.query(Alert).filter(
+            Alert.workspace_id == ws.id, Alert.alert_key == key
+        ).first()
+        if not alert:
+            alert = Alert(
+                workspace_id=ws.id, case_id=case.id, alert_key=key,
+                category="EVC_VISIT_OVERDUE" if is_overdue else "EVC_VISIT_REMINDER",
+                severity=severity, title=title, explanation=explanation,
+                status="OPEN", escalation_level=level, assigned_to=case.internal_owner_name,
+            )
+            db.add(alert)
+            db.flush()
+            created += 1
+            recipient = f"{case.internal_owner_name.lower().replace(' ', '.')}@institute.ac.in"
+            db.add(NotificationOutbox(
+                alert_id=alert.id,
+                recipient_email=recipient,
+                channel="SIMULATED_EMAIL",
+                delivery_status="DISPATCHED_SIMULATED",
+                is_simulated=True,
+                subject=f"[{severity}] {title}",
+                body=explanation,
+                created_at=now,
+            ))
+            notifications += 1
+        elif alert.status in ["OPEN", "ACKNOWLEDGED"]:
+            if alert.severity != severity or alert.escalation_level != level or alert.explanation != explanation:
+                alert.severity = severity
+                alert.escalation_level = level
+                alert.title = title
+                alert.explanation = explanation
+                updated += 1
+
+    db.add(AuditEvent(
+        workspace_id=ws.id,
+        actor_name=current_role,
+        actor_role=current_role,
+        entity_type="EVC_QUEUE",
+        entity_id=ws.id,
+        action="EVC_REMINDER_SCAN_COMPLETED",
+        details_json={"created": created, "updated": updated, "notifications_simulated": notifications},
+    ))
+    db.commit()
+    return {
+        "scanned_visits": len(visits),
+        "new_alerts_created": created,
+        "existing_alerts_updated": updated,
+        "simulated_notifications_created": notifications,
+        "delivery_note": "Notifications are logged as simulated only; no email was sent.",
+    }
