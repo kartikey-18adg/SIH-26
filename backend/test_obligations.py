@@ -56,23 +56,33 @@ def run_obligation_tests():
         db.refresh(case)
         db.refresh(document)
 
-        # A configured pathway must reject an out-of-sequence transition.
+        # A configured pathway rejects out-of-sequence movement and incomplete document review.
         assigned_path = assign_case_pathway(
-            case.id, PathwayAssignmentRequest(pathway_key="ONLY_SCRUTINY", configured_by="Test Administrator"),
+            case.id, PathwayAssignmentRequest(pathway_key="SCRUTINY_EVC", configured_by="Test Administrator"),
             db, "Administrator"
         )
         assert assigned_path["assigned"] is True
         try:
-            transition_case_stage(case.id, CaseTransitionRequest(to_stage="EVC",
+            transition_case_stage(case.id, CaseTransitionRequest(to_stage="COMPLIANCE_CHECKS",
                 reason="Intentional out-of-sequence transition test.", changed_by="Test Administrator"),
                 db, "Administrator")
-            raise AssertionError("Configured pathway should block EVC when next stage is COMPLIANCE_CHECKS")
+            raise AssertionError("Configured pathway should require EVC before compliance checks")
         except HTTPException as exc:
             assert exc.status_code == 400
-        transitioned = transition_case_stage(case.id, CaseTransitionRequest(to_stage="COMPLIANCE_CHECKS",
-            reason="Document scrutiny completed; proceeding to compliance checks.", changed_by="Test Administrator"),
+        try:
+            transition_case_stage(case.id, CaseTransitionRequest(to_stage="EVC",
+                reason="Attempt EVC before evidence review is complete.", changed_by="Test Administrator"),
+                db, "Administrator")
+            raise AssertionError("Evidence review gate should block an awaiting-review document")
+        except HTTPException as exc:
+            assert exc.status_code == 409
+        document.review_status = "VERIFIED_VALID"
+        document.reviewed_by = "Test Reviewer"
+        db.commit()
+        moved_to_evc = transition_case_stage(case.id, CaseTransitionRequest(to_stage="EVC",
+            reason="Evidence review completed; schedule EVC.", changed_by="Test Administrator"),
             db, "Administrator")
-        assert transitioned.current_stage == "COMPLIANCE_CHECKS"
+        assert moved_to_evc.current_stage == "EVC"
 
         # Create a due-today obligation and prove the scanner is idempotent.
         obligation_data = ObligationCreate(
@@ -128,6 +138,10 @@ def run_obligation_tests():
         )
         assert completed["status"] == "COMPLETED"
         assert completed["completed_at"] is not None
+        moved_after_evc = transition_case_stage(case.id, CaseTransitionRequest(to_stage="COMPLIANCE_CHECKS",
+            reason="EVC visit completed and recorded; proceed to compliance checks.", changed_by="Test Administrator"),
+            db, "Administrator")
+        assert moved_after_evc.current_stage == "COMPLIANCE_CHECKS"
 
         summary = operational_summary(db)
         assert "stage_pendency" in summary and "obligations_pending" in summary and "evc_scheduled" in summary
