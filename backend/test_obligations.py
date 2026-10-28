@@ -156,6 +156,10 @@ def run_obligation_tests():
         print("[PASSED] Obligation lifecycle, evidence validation, idempotent reminders, EVC scheduling/completion, metrics and audit trail.")
         db.commit()
     finally:
+        if obligation:
+            db.query(ComplianceObligation).filter_by(id=obligation.id).delete(synchronize_session=False)
+        if appointment:
+            db.query(EVCAppointment).filter_by(id=appointment.id).delete(synchronize_session=False)
         if case:
             db.query(NotificationOutbox).filter(NotificationOutbox.alert_id.in_(
                 db.query(Alert.id).filter(Alert.case_id == case.id)
@@ -172,10 +176,6 @@ def run_obligation_tests():
             inst = db.query(Institution).filter(Institution.id == inst_id).first()
             if inst:
                 db.delete(inst)
-        if obligation:
-            db.query(ComplianceObligation).filter_by(id=obligation.id).delete(synchronize_session=False)
-        if appointment:
-            db.query(EVCAppointment).filter_by(id=appointment.id).delete(synchronize_session=False)
         if workspace is not None and original_mode is not None:
             workspace.active_data_mode = original_mode
         db.commit()
