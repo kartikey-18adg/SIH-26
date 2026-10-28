@@ -268,6 +268,15 @@ def scan_obligation_deadlines(
         level = 2 if overdue and abs(days_left) > item.escalation_days else (1 if overdue else 0)
         suffix = "OVERDUE" if overdue else "DUE"
         key = f"ALERT-OBLIGATION-{suffix}-{item.id[:8]}"
+        if overdue:
+            prior_due_alert = db.query(Alert).filter(
+                Alert.workspace_id == ws.id, Alert.alert_key == f"ALERT-OBLIGATION-DUE-{item.id[:8]}",
+                Alert.status.in_(["OPEN", "ACKNOWLEDGED"])
+            ).first()
+            if prior_due_alert:
+                prior_due_alert.status = "RESOLVED"
+                prior_due_alert.resolved_at = utc_now()
+                prior_due_alert.resolution_notes = "Replaced by the overdue escalation alert."
         existing = db.query(Alert).filter(Alert.workspace_id == ws.id, Alert.alert_key == key).first()
         if existing:
             if existing.status in ["OPEN", "ACKNOWLEDGED"]:
@@ -397,6 +406,15 @@ def scan_evc_deadlines(db: Session = Depends(get_db), role: str = Depends(get_cu
         if not overdue and days_left > item.reminder_days:
             continue
         key = f"ALERT-EVC-{'OVERDUE' if overdue else 'REMINDER'}-{item.id[:8]}"
+        if overdue:
+            prior_reminder = db.query(Alert).filter(
+                Alert.workspace_id == ws.id, Alert.alert_key == f"ALERT-EVC-REMINDER-{item.id[:8]}",
+                Alert.status.in_(["OPEN", "ACKNOWLEDGED"])
+            ).first()
+            if prior_reminder:
+                prior_reminder.status = "RESOLVED"
+                prior_reminder.resolved_at = utc_now()
+                prior_reminder.resolution_notes = "Replaced by the overdue EVC escalation alert."
         existing = db.query(Alert).filter(Alert.workspace_id == ws.id, Alert.alert_key == key).first()
         if existing:
             if existing.status in ["OPEN", "ACKNOWLEDGED"]:
