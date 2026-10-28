@@ -68,7 +68,7 @@ def _allowed_next_stages(db: Session, case: ApprovalCase) -> List[str]:
         return VALID_STAGE_TRANSITIONS.get(current, [])
     index = sequence.index(current)
     result = [sequence[index + 1]] if index + 1 < len(sequence) else []
-    if current not in {"READY_FOR_SUBMISSION", "CLOSED"}:
+    if current not in {"DRAFT", "READY_FOR_SUBMISSION", "CLOSED"}:
         result.append("CORRECTIONS_REQUIRED")
     return result
 
