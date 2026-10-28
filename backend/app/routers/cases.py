@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import (
     Workspace, ApprovalCase, CaseStageHistory, Institution, 
-    EvidenceDocument, ComplianceResult, Task, Alert, AuditEvent
+    EvidenceDocument, ComplianceResult, Task, Alert, AuditEvent,
+    CaseWorkflowStep, WorkflowRoutingPolicy, EVCVisit
 )
 from .workspace import get_or_create_default_workspace
 from ..permissions import get_current_role, check_role_permission, ROLE_PERMISSIONS, normalize_role
@@ -409,6 +410,52 @@ def transition_case_stage(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid stage transition from '{current}' to '{target}'. Allowed next stages are: {', '.join(allowed)}"
         )
+
+    # Workflow Gate Enforcement:
+    # Apply gates only to forward-review/submission transitions when a checklist exists.
+    # Corrective, rejection, and closure paths remain available to avoid trapping cases.
+    gated_targets = {"DOCUMENT_REVIEW", "COMPLIANCE_CHECKS", "INTERNAL_REVIEW", "READY_FOR_SUBMISSION", "RECORDED_EXTERNALLY_SUBMITTED"}
+    if target in gated_targets:
+        workflow_steps = db.query(CaseWorkflowStep).filter(
+            CaseWorkflowStep.workspace_id == ws.id,
+            CaseWorkflowStep.case_id == c.id,
+        ).all()
+        if workflow_steps:
+            completed_keys = {step.step_key for step in workflow_steps if step.status == "COMPLETED"}
+            pathway = workflow_steps[0].pathway_snapshot
+            required_by_target = {
+                "DOCUMENT_REVIEW": ["DOCUMENT_COLLECTION"],
+                "COMPLIANCE_CHECKS": ["DOCUMENT_REVIEW"],
+                "INTERNAL_REVIEW": ["COMPLIANCE_REVIEW"],
+                "READY_FOR_SUBMISSION": ["INTERNAL_REVIEW"],
+                "RECORDED_EXTERNALLY_SUBMITTED": [],
+            }
+            required = list(required_by_target.get(target, []))
+            if target in {"INTERNAL_REVIEW", "READY_FOR_SUBMISSION", "RECORDED_EXTERNALLY_SUBMITTED"} and pathway in {"SCRUTINY_EVC", "EVC_SAC_SHC", "EVC_ONLY"}:
+                required.append("EVC_VISIT")
+            missing = [key for key in required if key not in completed_keys]
+            if missing:
+                labels = {step.step_key: step.step_label for step in workflow_steps}
+                missing_labels = [labels.get(key, key.replace("_", " ").title()) for key in missing]
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Workflow gate blocked this transition. Complete these checklist steps first: "
+                        + ", ".join(missing_labels)
+                        + ". If the checklist is inaccurate, review the case's configured pathway and workflow records."
+                    )
+                )
+            if "EVC_VISIT" in required:
+                completed_visit = db.query(EVCVisit).filter(
+                    EVCVisit.workspace_id == ws.id,
+                    EVCVisit.case_id == c.id,
+                    EVCVisit.status == "COMPLETED",
+                ).first()
+                if not completed_visit:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Workflow gate blocked this transition: the EVC checklist step is complete, but no completed EVC visit exists in EVC Scheduling."
+                    )
 
     # Transition logic
     c.current_stage = target
