@@ -454,3 +454,57 @@ export async function removeImportedData() {
   if (!res.ok) await handleResponseError(res, `Failed to remove imported data: HTTP ${res.status}`);
   return await res.json();
 }
+
+
+// EVC scheduling API calls. Timestamps are sent as ISO-8601 UTC values.
+export async function fetchEVCQueueApi(params: Record<string, string> = {}) {
+  const query = new URLSearchParams(params).toString();
+  const url = query ? `${API_BASE}/evc/queue?${query}` : `${API_BASE}/evc/queue`;
+  const res = await fetch(url, { cache: 'no-store', headers: getAuthHeaders() });
+  if (!res.ok) await handleResponseError(res, `EVC queue fetch failed: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function addCaseToEVCQueueApi(case_id: string, routing_basis: string) {
+  const res = await fetch(`${API_BASE}/evc/queue`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ case_id, routing_basis })
+  });
+  if (!res.ok) await handleResponseError(res, `Could not route case to EVC: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function scheduleEVCVisitApi(visitId: string, payload: {
+  scheduled_at: string; venue?: string; assigned_team?: string;
+}) {
+  const res = await fetch(`${API_BASE}/evc/${visitId}/schedule`, {
+    method: 'PUT',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) await handleResponseError(res, `EVC scheduling failed: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function rescheduleEVCVisitApi(visitId: string, payload: {
+  scheduled_at: string; venue?: string; assigned_team?: string; reason: string;
+}) {
+  const res = await fetch(`${API_BASE}/evc/${visitId}/reschedule`, {
+    method: 'PUT',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) await handleResponseError(res, `EVC rescheduling failed: HTTP ${res.status}`);
+  return await res.json();
+}
+
+export async function completeEVCVisitApi(visitId: string, completion_notes: string) {
+  const res = await fetch(`${API_BASE}/evc/${visitId}/complete`, {
+    method: 'PUT',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ completion_notes })
+  });
+  if (!res.ok) await handleResponseError(res, `EVC completion failed: HTTP ${res.status}`);
+  return await res.json();
+}
