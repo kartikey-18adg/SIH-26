@@ -51,6 +51,7 @@ class EVCAppointmentCreate(BaseModel):
     case_id: str
     committee_name: str = Field(..., min_length=2, max_length=255)
     scheduled_at: datetime
+    reminder_days: int = Field(7, ge=0, le=365)
     location_or_mode: Optional[str] = None
     scheduled_by: str = Field(..., min_length=2)
 
@@ -96,7 +97,7 @@ def _evc_dict(item: EVCAppointment):
         "case_reference": item.case.case_reference if item.case else None,
         "institution_name": item.case.institution.legal_name if item.case and item.case.institution else None,
         "committee_name": item.committee_name, "scheduled_at": item.scheduled_at,
-        "location_or_mode": item.location_or_mode, "status": item.status,
+        "reminder_days": item.reminder_days, "location_or_mode": item.location_or_mode, "status": item.status,
         "completion_notes": item.completion_notes, "scheduled_by": item.scheduled_by,
         "completed_by": item.completed_by, "completed_at": item.completed_at,
         "created_at": item.created_at, "updated_at": item.updated_at,
@@ -325,7 +326,7 @@ def create_evc_appointment(
     case = _active_case(db, ws, req.case_id)
     appointment = EVCAppointment(
         workspace_id=ws.id, case_id=case.id, committee_name=req.committee_name.strip(),
-        scheduled_at=req.scheduled_at, location_or_mode=req.location_or_mode,
+        scheduled_at=req.scheduled_at, reminder_days=req.reminder_days, location_or_mode=req.location_or_mode,
         status="SCHEDULED", scheduled_by=req.scheduled_by.strip()
     )
     db.add(appointment)
@@ -378,6 +379,55 @@ def update_evc_appointment(
     db.commit()
     db.refresh(appointment)
     return _evc_dict(appointment)
+
+
+@router.post("/evc/scan")
+def scan_evc_deadlines(db: Session = Depends(get_db), role: str = Depends(get_current_role)):
+    check_role_permission(role, ["Compliance Officer", "Administrator"], "scanning EVC reminders and escalations")
+    ws = get_or_create_default_workspace(db)
+    today = date.today()
+    appointments = db.query(EVCAppointment).join(ApprovalCase).filter(
+        EVCAppointment.workspace_id == ws.id, ApprovalCase.data_mode == ws.active_data_mode,
+        EVCAppointment.status.in_(["SCHEDULED", "RESCHEDULED", "MISSED"])
+    ).all()
+    created = 0
+    for item in appointments:
+        days_left = (item.scheduled_at.date() - today).days
+        overdue = days_left < 0
+        if not overdue and days_left > item.reminder_days:
+            continue
+        key = f"ALERT-EVC-{'OVERDUE' if overdue else 'REMINDER'}-{item.id[:8]}"
+        existing = db.query(Alert).filter(Alert.workspace_id == ws.id, Alert.alert_key == key).first()
+        if existing:
+            if existing.status in ["OPEN", "ACKNOWLEDGED"]:
+                existing.escalation_level = 2 if overdue else 1
+                existing.severity = "CRITICAL" if overdue else "HIGH"
+                existing.explanation = (f"EVC appointment for {item.case.case_reference} was scheduled for {item.scheduled_at.isoformat()} and is overdue." if overdue
+                    else f"EVC appointment for {item.case.case_reference} is scheduled for {item.scheduled_at.isoformat()}.")
+            continue
+        alert = Alert(
+            workspace_id=ws.id, case_id=item.case_id, alert_key=key,
+            category="EVC_OVERDUE" if overdue else "EVC_REMINDER",
+            severity="CRITICAL" if overdue else "HIGH",
+            title=(f"EVC appointment overdue: {item.case.case_reference}" if overdue else f"EVC visit approaching: {item.case.case_reference}"),
+            explanation=(f"EVC appointment for {item.case.case_reference} was scheduled for {item.scheduled_at.isoformat()} and is overdue." if overdue
+                else f"EVC appointment for {item.case.case_reference} is scheduled for {item.scheduled_at.isoformat()}."),
+            status="OPEN", escalation_level=2 if overdue else 1, assigned_to=item.scheduled_by
+        )
+        db.add(alert)
+        db.flush()
+        db.add(NotificationOutbox(
+            alert_id=alert.id,
+            recipient_email=f"{item.scheduled_by.lower().replace(' ', '.')}@institute.ac.in",
+            channel="SIMULATED_EMAIL", delivery_status="DISPATCHED_SIMULATED", is_simulated=True,
+            subject=f"[EVC {'OVERDUE' if overdue else 'REMINDER'}] {item.case.case_reference}",
+            body=f"Committee: {item.committee_name}\nScheduled: {item.scheduled_at.isoformat()}\nStatus: {item.status}\nPlease coordinate the EVC activity. Notifications are simulated in this prototype."
+        ))
+        _audit(db, ws, "EVC Deadline Scanner", "SYSTEM_MONITOR", "EVC_APPOINTMENT", item.id,
+               "EVC_DEADLINE_ALERT_CREATED", {"alert_key": key, "days_remaining": days_left})
+        created += 1
+    db.commit()
+    return {"scanned_appointments": len(appointments), "new_alerts_created": created}
 
 @router.get("/operations/summary")
 def operational_summary(db: Session = Depends(get_db)):
