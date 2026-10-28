@@ -1,12 +1,12 @@
 import uuid
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from ..database import get_db, Base, engine
-from ..models import Workspace, ApprovalCase, Task, AuditEvent
+from ..models import Workspace, ApprovalCase, ComplianceResult, Task, AuditEvent
 from .workspace import get_or_create_default_workspace
 
 router = APIRouter(prefix="/api", tags=["Tasks"])
@@ -82,6 +82,99 @@ def format_task_item(t: Task) -> TaskItem:
         created_at=t.created_at,
         updated_at=t.updated_at
     )
+
+@router.post("/tasks/sync")
+def sync_tasks_from_workflows(db: Session = Depends(get_db)):
+    """Idempotently turn active cases and saved compliance findings into actionable tasks."""
+    ws = get_or_create_default_workspace(db)
+    cases = db.query(ApprovalCase).filter(
+        ApprovalCase.workspace_id == ws.id,
+        ApprovalCase.data_mode == ws.active_data_mode
+    ).all()
+
+    today = date.today()
+    default_due_date = today + timedelta(days=7)
+    created_count = 0
+    updated_count = 0
+    active_case_ids = {case.id for case in cases}
+
+    for case in cases:
+        due_date = case.target_date if case.target_date and case.target_date >= today else default_due_date
+        owner = (case.internal_owner_name or "").strip() or "Institutional Coordinator"
+
+        # Every unfinished case gets one durable follow-up task. The stable title
+        # makes this operation safe to repeat without duplicating tasks.
+        if case.status.upper() != "COMPLETED":
+            title = f"Case follow-up: {case.case_reference}"
+            existing = db.query(Task).filter(
+                Task.case_id == case.id,
+                Task.title == title
+            ).first()
+            if not existing:
+                db.add(Task(
+                    case_id=case.id,
+                    title=title,
+                    description=f"Review the active approval case at stage {case.current_stage}. Update the case and complete outstanding workflow steps.",
+                    assignee_name=owner,
+                    priority=case.priority if case.priority in {"LOW", "MEDIUM", "HIGH", "CRITICAL"} else "MEDIUM",
+                    status="TODO",
+                    due_date=due_date,
+                    created_by="AIClear Workflow Sync"
+                ))
+                created_count += 1
+
+    # Saved compliance results become tasks only when human action is needed.
+    action_statuses = {"NEEDS_REVIEW", "NON_COMPLIANT", "EXPIRED_EVIDENCE", "MISSING_EVIDENCE", "UNABLE_TO_DETERMINE"}
+    results = db.query(ComplianceResult).filter(
+        ComplianceResult.case_id.in_(active_case_ids)
+    ).all() if active_case_ids else []
+
+    for result in results:
+        case = result.case
+        rule = result.rule
+        if not case or not rule:
+            continue
+        title = f"Compliance: {rule.rule_key} — {rule.title}"
+        task = db.query(Task).filter(
+            Task.case_id == case.id,
+            Task.title == title
+        ).first()
+
+        needs_action = result.status in action_statuses or result.requires_human_review
+        if needs_action:
+            if not task:
+                priority = "CRITICAL" if rule.severity.upper() == "CRITICAL" else "HIGH" if rule.severity.upper() == "HIGH" else "MEDIUM"
+                due_date = case.target_date if case.target_date and case.target_date >= today else default_due_date
+                db.add(Task(
+                    case_id=case.id,
+                    title=title,
+                    description=f"Generated from compliance finding {result.id}. {result.explanation} Recommended action: {result.recommended_action or 'Review the finding and record an outcome.'}",
+                    assignee_name=(case.internal_owner_name or "").strip() or "Compliance Officer",
+                    priority=priority,
+                    status="TODO",
+                    due_date=due_date,
+                    created_by="AIClear Workflow Sync"
+                ))
+                created_count += 1
+            elif task.status in {"COMPLETED", "CANCELLED"}:
+                # Re-open a previously resolved item if a later evaluation flags it again.
+                task.status = "TODO"
+                task.completion_notes = None
+                task.completed_at = None
+                task.updated_at = utc_now()
+                updated_count += 1
+            elif task.status == "TODO" and result.explanation:
+                task.description = f"Generated from compliance finding {result.id}. {result.explanation} Recommended action: {result.recommended_action or 'Review the finding and record an outcome.'}"
+        elif task and task.status not in {"COMPLETED", "CANCELLED"}:
+            task.status = "COMPLETED"
+            task.completion_notes = "Automatically completed because the latest compliance evaluation no longer requires action."
+            task.completed_at = utc_now()
+            task.updated_at = utc_now()
+            updated_count += 1
+
+    db.commit()
+    return {"success": True, "created": created_count, "updated": updated_count}
+
 
 @router.get("/tasks", response_model=List[TaskItem])
 def list_tasks(
