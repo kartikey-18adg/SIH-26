@@ -25,6 +25,9 @@ export default function ComplianceOperationsPage() {
   const [cases, setCases] = useState<any[]>([]);
   const [obligations, setObligations] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [pathwayTemplates, setPathwayTemplates] = useState<any[]>([]);
+  const [assignedPathway, setAssignedPathway] = useState<any>(null);
+  const [pathwayKey, setPathwayKey] = useState('ONLY_SCRUTINY');
   const [summary, setSummary] = useState<any>(null);
   const [caseId, setCaseId] = useState('');
   const [title, setTitle] = useState('Submit signed undertaking');
@@ -42,14 +45,21 @@ export default function ComplianceOperationsPage() {
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
-    const [caseRows, obligationRows, evcRows, metrics] = await Promise.all([
-      api('/cases'), api('/obligations'), api('/evc/appointments'), api('/operations/summary')
+    const [caseRows, obligationRows, evcRows, metrics, templates] = await Promise.all([
+      api('/cases'), api('/obligations'), api('/evc/appointments'), api('/operations/summary'), api('/workflows/pathways')
     ]);
     setCases(caseRows);
     setObligations(obligationRows);
     setAppointments(evcRows);
     setSummary(metrics);
+    setPathwayTemplates(templates);
+    const targetCaseId = caseId || (caseRows.length ? caseRows[0].id : '');
     if (!caseId && caseRows.length) setCaseId(caseRows[0].id);
+    if (targetCaseId) {
+      const assigned = await api(`/workflows/cases/${targetCaseId}/pathway`);
+      setAssignedPathway(assigned);
+      if (assigned.assigned) setPathwayKey(assigned.pathway_key);
+    } else setAssignedPathway(null);
   }, [caseId]);
 
   useEffect(() => { refresh().catch((e) => setError(e.message)); }, [refresh]);
