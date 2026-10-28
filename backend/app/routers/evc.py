@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import ApprovalCase, Alert, AuditEvent, EVCVisit, NotificationOutbox
+from ..models import ApprovalCase, Alert, AuditEvent, EVCVisit, NotificationOutbox, WorkflowRoutingPolicy
 from ..permissions import get_current_role, check_role_permission
 from .workspace import get_or_create_default_workspace
 
@@ -115,6 +115,14 @@ def add_case_to_evc_queue(
 ):
     check_role_permission(current_role, ["Administrator", "Compliance Officer"], "routing a case to EVC")
     ws = get_or_create_default_workspace(db)
+    policy = db.query(WorkflowRoutingPolicy).filter(
+        WorkflowRoutingPolicy.workspace_id == ws.id
+    ).first()
+    if policy and policy.pathway == "SCRUTINY_ONLY":
+        raise HTTPException(
+            status_code=409,
+            detail="The saved workspace pathway is Scrutiny only. Update the pathway configuration before routing a case to EVC, if the applicable verified workflow requires it."
+        )
     case = db.query(ApprovalCase).filter(
         ApprovalCase.id == req.case_id,
         ApprovalCase.workspace_id == ws.id,
