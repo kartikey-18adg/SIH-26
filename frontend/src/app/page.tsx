@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { AppShell } from '../components/AppShell';
 import { MetricCards } from '../components/MetricCards';
