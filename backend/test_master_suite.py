@@ -40,6 +40,10 @@ def main():
     run_navigation_tests()
     print("\n")
 
+    print(">>> SECTION 7: UNDERTAKINGS, EVC & OPERATIONS <<<")
+    run_obligation_tests()
+    print("\\n")
+
     print("=====================================================================")
     print("   ALL PHASES PLUS UNDERTAKINGS/EVC TESTS COMPLETED   ")
     print("=====================================================================")
