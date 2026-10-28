@@ -550,3 +550,54 @@ export async function saveWorkflowRoutingPolicyApi(pathway: ApprovalPathway, rat
   if (!res.ok) await handleResponseError(res, `Failed to save pathway configuration: HTTP ${res.status}`);
   return await res.json();
 }
+
+
+export interface WorkflowExecutionCase {
+  id: string;
+  case_reference: string;
+  institution_name: string;
+  current_stage: string;
+}
+export interface WorkflowExecutionStep {
+  id: string;
+  step_key: string;
+  step_label: string;
+  sequence: number;
+  status: 'PENDING' | 'COMPLETED';
+  completion_notes: string | null;
+  completed_by: string | null;
+  completed_at: string | null;
+  pathway_snapshot: string;
+}
+export interface WorkflowExecutionDetail {
+  case_id: string;
+  case_reference: string;
+  institution_name: string;
+  current_stage: string;
+  pathway: string;
+  pathway_configured: boolean;
+  steps: WorkflowExecutionStep[];
+  completed_steps: number;
+  total_steps: number;
+  completion_percent: number;
+  notice: string;
+}
+export async function fetchWorkflowExecutionCasesApi(): Promise<{ items: WorkflowExecutionCase[]; active_data_mode: string }> {
+  const res = await fetch(`${API_BASE}/workflow-execution/cases`, { cache: 'no-store', headers: getAuthHeaders() });
+  if (!res.ok) await handleResponseError(res, `Failed to load workflow cases: HTTP ${res.status}`);
+  return await res.json();
+}
+export async function fetchWorkflowExecutionApi(caseId: string): Promise<WorkflowExecutionDetail> {
+  const res = await fetch(`${API_BASE}/workflow-execution/cases/${encodeURIComponent(caseId)}`, { cache: 'no-store', headers: getAuthHeaders() });
+  if (!res.ok) await handleResponseError(res, `Failed to load case workflow: HTTP ${res.status}`);
+  return await res.json();
+}
+export async function completeWorkflowStepApi(caseId: string, stepKey: string, notes: string): Promise<{ success: boolean; step: WorkflowExecutionStep; message: string }> {
+  const res = await fetch(`${API_BASE}/workflow-execution/cases/${encodeURIComponent(caseId)}/steps/${encodeURIComponent(stepKey)}/complete`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({ notes })
+  });
+  if (!res.ok) await handleResponseError(res, `Failed to complete workflow step: HTTP ${res.status}`);
+  return await res.json();
+}
