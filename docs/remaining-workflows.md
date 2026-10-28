@@ -29,6 +29,7 @@ All endpoints use the existing demo-role header `X-AIClear-Role`. The role heade
 
 ### Operations metrics
 - `GET /api/operations/summary` — stage and region/state pendency, stage ageing based on stage history, open-case workload by owner, case deadline buckets, pending/overdue obligations, EVC counts, and documents expiring within 30 days.
+- `backend/run_deadline_scans.py` — one-shot daily scanner for case deadlines/document expiry, obligations, and EVC reminders. Schedule it with Windows Task Scheduler or cron; the outbox remains simulated.
 
 ## UI
 
@@ -43,7 +44,7 @@ The master suite includes `backend/test_obligations.py`, covering:
 - EVC completion with notes.
 - Operations metrics and audit-event creation.
 
-Run from the repository root:
+Run the daily scanner from the repository root with `python backend/run_deadline_scans.py` (then schedule that command daily for unattended reminders). Run tests from the repository root:
 ```bash
 python backend/test_master_suite.py
 ```
