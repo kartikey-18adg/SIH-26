@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { AppShell } from '../../components/AppShell';
-import { fetchCases, fetchEVCQueueApi, addCaseToEVCQueueApi, scheduleEVCVisitApi, rescheduleEVCVisitApi, completeEVCVisitApi } from '../../services/api';
+import { fetchCases, fetchEVCQueueApi, addCaseToEVCQueueApi, scheduleEVCVisitApi, rescheduleEVCVisitApi, completeEVCVisitApi, scanEVCRemindersApi } from '../../services/api';
 
 type EVCItem = {
   id: string; case_id: string; case_reference: string; institution_name: string;
@@ -27,6 +27,7 @@ export default function EVCPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [scanSummary, setScanSummary] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -96,7 +97,8 @@ export default function EVCPage() {
     </section>
 
     <section>
-      <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-bold">EVC visit queue</h2><button onClick={() => void refresh()} className="rounded border border-[#C6C4BA] bg-white px-3 py-1.5 text-xs font-semibold">Refresh</button></div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-bold">EVC visit queue</h2><div className="flex gap-2"><button disabled={busy} onClick={() => void runAction(async () => { const result = await scanEVCRemindersApi(); setScanSummary(`Scanned ${result.scanned_visits} visits; ${result.new_alerts_created} new alerts; ${result.simulated_notifications_created} simulated notifications. No real email was sent.`); return result; }, 'EVC reminder scan completed.')} className="rounded border border-[#C6C4BA] bg-white px-3 py-1.5 text-xs font-semibold disabled:opacity-50">Scan reminders</button><button onClick={() => void refresh()} className="rounded border border-[#C6C4BA] bg-white px-3 py-1.5 text-xs font-semibold">Refresh</button></div></div>
+      {scanSummary && <p className="mb-3 rounded border border-[#CAD6E2] bg-[#EDF2F7] px-3 py-2 text-xs text-[#2B3B4C]">{scanSummary}</p>}
       {loading ? <p className="py-8 text-center text-sm text-[#5E5D57]">Loading EVC queue…</p> : items.length === 0 ? <div className="rounded border border-dashed border-[#C6C4BA] bg-white p-8 text-center text-sm text-[#5E5D57]">No EVC visits queued for the active workspace mode.</div> :
         <div className="space-y-3">{items.map(item => <article key={item.id} className="rounded border border-[#E2E0D8] bg-white p-4">
           <div className="flex flex-col justify-between gap-2 sm:flex-row">
