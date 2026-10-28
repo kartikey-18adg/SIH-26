@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import (
-    Workspace, ApprovalCase, EvidenceDocument, ComplianceObligation, EVCAppointment,
+    Workspace, ApprovalCase, CaseStageHistory, EvidenceDocument, ComplianceObligation, EVCAppointment,
     Alert, NotificationOutbox, AuditEvent
 )
 from ..permissions import get_current_role, check_role_permission
@@ -440,10 +440,37 @@ def operational_summary(db: Session = Depends(get_db)):
     today = date.today()
     stages = {}
     regions = {}
+    workload = {}
+    stage_ageing = []
+    deadline_buckets = {"overdue": 0, "due_0_7_days": 0, "due_8_14_days": 0, "due_after_14_days": 0}
     for case in cases:
         stages[case.current_stage] = stages.get(case.current_stage, 0) + 1
         region = case.institution.state if case.institution else "Unknown"
         regions[region] = regions.get(region, 0) + 1
+        if case.status != "COMPLETED":
+            workload[case.internal_owner_name] = workload.get(case.internal_owner_name, 0) + 1
+            remaining = (case.target_date - today).days
+            if remaining < 0:
+                deadline_buckets["overdue"] += 1
+            elif remaining <= 7:
+                deadline_buckets["due_0_7_days"] += 1
+            elif remaining <= 14:
+                deadline_buckets["due_8_14_days"] += 1
+            else:
+                deadline_buckets["due_after_14_days"] += 1
+        latest_history = db.query(CaseStageHistory).filter(
+            CaseStageHistory.case_id == case.id,
+            CaseStageHistory.to_stage == case.current_stage
+        ).order_by(CaseStageHistory.changed_at.desc()).first()
+        stage_start = latest_history.changed_at.date() if latest_history else (
+            case.created_at.date() if case.created_at else today
+        )
+        stage_ageing.append({
+            "case_id": case.id, "case_reference": case.case_reference,
+            "stage": case.current_stage, "owner": case.internal_owner_name,
+            "days_in_stage": max(0, (today - stage_start).days),
+            "stage_started_on": stage_start.isoformat()
+        })
     obligations = db.query(ComplianceObligation).filter(ComplianceObligation.workspace_id == ws.id,
         ComplianceObligation.case_id.in_(case_ids)).all() if case_ids else []
     evcs = db.query(EVCAppointment).filter(EVCAppointment.workspace_id == ws.id,
@@ -454,6 +481,9 @@ def operational_summary(db: Session = Depends(get_db)):
         "cases_total": len(cases),
         "stage_pendency": [{"stage": key, "count": value} for key, value in sorted(stages.items())],
         "region_pendency": [{"region": key, "count": value} for key, value in sorted(regions.items())],
+        "stage_ageing": sorted(stage_ageing, key=lambda x: x["days_in_stage"], reverse=True),
+        "workload_by_owner": [{"owner": key, "open_cases": value} for key, value in sorted(workload.items(), key=lambda x: x[1], reverse=True)],
+        "deadline_buckets": deadline_buckets,
         "obligations_pending": sum(1 for x in obligations if x.status != "VERIFIED"),
         "obligations_overdue": sum(1 for x in obligations if x.status != "VERIFIED" and x.due_date < today),
         "evc_scheduled": sum(1 for x in evcs if x.status in {"SCHEDULED", "RESCHEDULED"}),
