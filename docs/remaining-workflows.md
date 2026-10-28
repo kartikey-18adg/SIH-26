@@ -10,8 +10,9 @@ All endpoints use the existing demo-role header `X-AIClear-Role`. The role heade
 - `GET /api/workflows/pathways` — built-in pathway templates.
 - `GET /api/workflows/cases/{case_id}/pathway` — assigned pathway for a case.
 - `POST /api/workflows/cases/{case_id}/pathway` — assign a built-in template or custom stage sequence. Restricted to Administrator / Compliance Officer. Assignments are audited and constrain available stage transitions.
+- `GET/POST /api/workflows/cases/{case_id}/committee-reviews` — record and inspect SAC/SHC recommendations with rationale. A `RECOMMEND` record is required before advancing from SAC/SHC to internal review.
 - Supported templates: Only Scrutiny, Scrutiny + EVC, EVC + SAC/SHC, Only EVC. Custom sequences must start at `DRAFT`, end at `READY_FOR_SUBMISSION`, use supported unique stages, and place EVC before SAC/SHC.
-- Correction loops return to the stage from which the case was returned. External submission and closure remain separate recorded steps.
+- Correction loops return to the stage from which the case was returned. Evidence review, EVC completion, SAC/SHC recommendation, and compliance disposition are enforced as transition gates. External submission and closure remain separate recorded steps.
 
 ### Undertakings / time-bound obligations
 - `GET /api/obligations` — list obligations in the active data mode; supports `case_id` and `status`.
