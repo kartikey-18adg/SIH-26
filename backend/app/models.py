@@ -330,6 +330,7 @@ class EVCAppointment(Base):
     case_id = Column(String(36), ForeignKey("approval_cases.id"), nullable=False, index=True)
     committee_name = Column(String(255), nullable=False)
     scheduled_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    reminder_days = Column(Integer, nullable=False, default=7)
     location_or_mode = Column(String(255), nullable=True)
     status = Column(String(40), nullable=False, default="SCHEDULED")
     completion_notes = Column(Text, nullable=True)
