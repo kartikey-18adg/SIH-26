@@ -341,3 +341,20 @@ class EVCAppointment(Base):
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
     case = relationship("ApprovalCase")
+
+
+class WorkflowPathwayAssignment(Base):
+    """Case-specific configurable routing sequence, separate from statutory decision-making."""
+    __tablename__ = "workflow_pathway_assignments"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    case_id = Column(String(36), ForeignKey("approval_cases.id"), nullable=False, unique=True, index=True)
+    pathway_key = Column(String(80), nullable=False)
+    pathway_name = Column(String(255), nullable=False)
+    stage_sequence = Column(JSON, nullable=False)
+    configured_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    case = relationship("ApprovalCase")
