@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { AppShell } from '../../components/AppShell';
-import { fetchTasksApi, createTaskApi, updateTaskStatusApi } from '../../services/api';
+import { fetchTasksApi, createTaskApi, updateTaskStatusApi, syncTasksApi } from '../../services/api';
 
 export default function TasksPage() {
   const { summary, activeMode, openCaseByRef, setShowSettingsModal, loadData: refreshWorkspace } = useWorkspace();
@@ -35,6 +35,7 @@ export default function TasksPage() {
     setLoading(true);
     setError(null);
     try {
+      await syncTasksApi();
       const data = await fetchTasksApi();
       setTasks(data);
     } catch (err: any) {
