@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import (
     Workspace, ApprovalCase, CaseStageHistory, Institution, 
-    EvidenceDocument, ComplianceResult, Task, Alert, AuditEvent, WorkflowPathwayAssignment, EVCAppointment
+    EvidenceDocument, ComplianceResult, Task, Alert, AuditEvent, WorkflowPathwayAssignment, EVCAppointment, CommitteeReviewRecord
 )
 from .workspace import get_or_create_default_workspace
 from ..permissions import get_current_role, check_role_permission, ROLE_PERMISSIONS, normalize_role
@@ -461,6 +461,14 @@ def transition_case_stage(
         ).count()
         if not completed_evc:
             raise HTTPException(status_code=409, detail="Workflow gate blocked this transition. Record an EVC appointment as completed with notes first.")
+
+    # SAC/SHC review must be recorded before progressing to internal review.
+    if current == "SAC_SHC" and target == "INTERNAL_REVIEW":
+        committee_record = db.query(CommitteeReviewRecord).filter(
+            CommitteeReviewRecord.case_id == c.id
+        ).order_by(CommitteeReviewRecord.created_at.desc()).first()
+        if not committee_record or committee_record.decision != "RECOMMEND":
+            raise HTTPException(status_code=409, detail="Workflow gate blocked this transition. Record an authorized SAC/SHC recommendation before internal review.")
 
     # Compliance findings must be evaluated and outstanding findings routed for correction.
     if current == "COMPLIANCE_CHECKS" and target in {"INTERNAL_REVIEW", "READY_FOR_SUBMISSION"}:
