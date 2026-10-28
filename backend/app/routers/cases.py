@@ -66,6 +66,12 @@ def _allowed_next_stages(db: Session, case: ApprovalCase) -> List[str]:
         return [prior.from_stage] if prior else []
     if current not in sequence:
         return VALID_STAGE_TRANSITIONS.get(current, [])
+    if current == "READY_FOR_SUBMISSION":
+        return ["RECORDED_EXTERNALLY_SUBMITTED", "CLOSED"]
+    if current == "RECORDED_EXTERNALLY_SUBMITTED":
+        return ["EXTERNAL_RESPONSE_RECEIVED", "CLOSED"]
+    if current == "EXTERNAL_RESPONSE_RECEIVED":
+        return ["CLOSED", "CORRECTIONS_REQUIRED"]
     index = sequence.index(current)
     result = [sequence[index + 1]] if index + 1 < len(sequence) else []
     if current not in {"DRAFT", "READY_FOR_SUBMISSION", "CLOSED"}:
