@@ -102,6 +102,31 @@ export default function ComplianceOperationsPage() {
         </div>
       )}
 
+      {summary && <section className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="rounded border border-[#E2E0D8] bg-white p-4">
+          <h2 className="mb-3 text-sm font-bold">Pendency by stage</h2>
+          <div className="space-y-2">{summary.stage_pendency.map((x: any) => <div key={x.stage} className="flex justify-between gap-3 text-xs"><span>{x.stage.replace(/_/g, ' ')}</span><strong className="tabular-nums">{x.count}</strong></div>)}</div>
+        </div>
+        <div className="rounded border border-[#E2E0D8] bg-white p-4">
+          <h2 className="mb-3 text-sm font-bold">Pendency by state / region</h2>
+          <div className="space-y-2">{summary.region_pendency.map((x: any) => <div key={x.region} className="flex justify-between gap-3 text-xs"><span>{x.region}</span><strong className="tabular-nums">{x.count}</strong></div>)}</div>
+        </div>
+        <div className="rounded border border-[#E2E0D8] bg-white p-4">
+          <h2 className="mb-3 text-sm font-bold">Officer workload</h2>
+          <div className="space-y-2">{summary.workload_by_owner.map((x: any) => <div key={x.owner} className="flex justify-between gap-3 text-xs"><span>{x.owner}</span><strong className="tabular-nums">{x.open_cases}</strong></div>)}</div>
+          <h3 className="mb-2 mt-4 text-xs font-bold">Case deadline buckets</h3>
+          <div className="space-y-1 text-xs text-[#5E5D57]">
+            <p>Overdue: <strong>{summary.deadline_buckets.overdue}</strong></p>
+            <p>Due in 0–7 days: <strong>{summary.deadline_buckets.due_0_7_days}</strong></p>
+            <p>Due in 8–14 days: <strong>{summary.deadline_buckets.due_8_14_days}</strong></p>
+          </div>
+        </div>
+        <div className="rounded border border-[#E2E0D8] bg-white p-4 lg:col-span-3">
+          <h2 className="mb-3 text-sm font-bold">Longest-running stages</h2>
+          {summary.stage_ageing.length === 0 ? <p className="text-xs text-[#5E5D57]">No cases in the active data mode.</p> : <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr className="border-b border-[#E2E0D8] text-[#5E5D57]"><th className="py-2 pr-3">Case</th><th className="py-2 pr-3">Stage</th><th className="py-2 pr-3">Owner</th><th className="py-2 pr-3">Since</th><th className="py-2 text-right">Days in stage</th></tr></thead><tbody>{summary.stage_ageing.slice(0, 10).map((x: any) => <tr key={x.case_id} className="border-b border-[#F0EFEA]"><td className="py-2 pr-3 font-semibold">{x.case_reference}</td><td className="py-2 pr-3">{x.stage.replace(/_/g, ' ')}</td><td className="py-2 pr-3">{x.owner}</td><td className="py-2 pr-3">{x.stage_started_on}</td><td className="py-2 text-right font-bold tabular-nums">{x.days_in_stage}</td></tr>)}</tbody></table></div>}
+        </div>
+      </section>}
+
       <section className="mb-6 rounded border border-[#E2E0D8] bg-white p-4">
         <h2 className="mb-2 text-sm font-bold">Configure the application pathway</h2>
         <p className="mb-3 text-xs text-[#5E5D57]">Select an approved route for the selected case. Once assigned, case-stage transitions are restricted to the configured sequence. Custom stage rules remain institution-configurable and require regulatory verification.</p>
