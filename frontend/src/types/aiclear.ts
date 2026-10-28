@@ -79,6 +79,9 @@ export interface DashboardSummary {
   open_high_priority_alerts: number;
   upcoming_deadlines_count: number;
   compliance_items_needing_review: number;
+  evc_waiting_to_schedule?: number;
+  evc_scheduled?: number;
+  evc_overdue?: number;
   stage_breakdown: StageBreakdown[];
   recent_cases: CaseSummaryItem[];
   open_alerts: AlertSummaryItem[];
