@@ -508,3 +508,14 @@ export async function completeEVCVisitApi(visitId: string, completion_notes: str
   if (!res.ok) await handleResponseError(res, `EVC completion failed: HTTP ${res.status}`);
   return await res.json();
 }
+
+
+export async function scanEVCRemindersApi() {
+  const res = await fetch(`${API_BASE}/evc/scan-reminders`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    cache: 'no-store'
+  });
+  if (!res.ok) await handleResponseError(res, `EVC reminder scan failed: HTTP ${res.status}`);
+  return await res.json();
+}
