@@ -430,8 +430,10 @@ def transition_case_stage(
                 "READY_FOR_SUBMISSION": ["INTERNAL_REVIEW"],
                 "RECORDED_EXTERNALLY_SUBMITTED": [],
             }
-            required = list(required_by_target.get(target, []))
-            if target in {"INTERNAL_REVIEW", "READY_FOR_SUBMISSION", "RECORDED_EXTERNALLY_SUBMITTED"} and pathway in {"SCRUTINY_EVC", "EVC_SAC_SHC", "EVC_ONLY"}:
+            # Only enforce checklist steps that actually belong to this case's pathway.
+            pathway_step_keys = {step.step_key for step in workflow_steps}
+            required = [key for key in required_by_target.get(target, []) if key in pathway_step_keys]
+            if target in {"INTERNAL_REVIEW", "READY_FOR_SUBMISSION", "RECORDED_EXTERNALLY_SUBMITTED"} and pathway in {"SCRUTINY_EVC", "EVC_SAC_SHC", "EVC_ONLY"} and "EVC_VISIT" in pathway_step_keys:
                 required.append("EVC_VISIT")
             missing = [key for key in required if key not in completed_keys]
             if missing:
