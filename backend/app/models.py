@@ -289,3 +289,88 @@ class AuditEvent(Base):
     created_at = Column(DateTime(timezone=True), default=utc_now)
 
     workspace = relationship("Workspace", back_populates="audit_events")
+
+
+class ComplianceObligation(Base):
+    """Time-bound institutional undertaking with evidence and independent verification."""
+    __tablename__ = "compliance_obligations"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    case_id = Column(String(36), ForeignKey("approval_cases.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=False)
+    obligation_type = Column(String(50), nullable=False, default="UNDERTAKING")
+    due_date = Column(Date, nullable=False, index=True)
+    reminder_days = Column(Integer, nullable=False, default=14)
+    escalation_days = Column(Integer, nullable=False, default=0)
+    assigned_to = Column(String(100), nullable=False)
+    status = Column(String(40), nullable=False, default="PENDING")
+    submitted_evidence_document_id = Column(String(36), ForeignKey("evidence_documents.id"), nullable=True)
+    submission_notes = Column(Text, nullable=True)
+    submitted_by = Column(String(100), nullable=True)
+    submitted_at = Column(DateTime(timezone=True), nullable=True)
+    verification_notes = Column(Text, nullable=True)
+    verified_by = Column(String(100), nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    created_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    case = relationship("ApprovalCase")
+    evidence_document = relationship("EvidenceDocument")
+
+
+class EVCAppointment(Base):
+    """EVC scheduling and completion tracking; scheduling never represents a statutory decision."""
+    __tablename__ = "evc_appointments"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    case_id = Column(String(36), ForeignKey("approval_cases.id"), nullable=False, index=True)
+    committee_name = Column(String(255), nullable=False)
+    scheduled_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    reminder_days = Column(Integer, nullable=False, default=7)
+    location_or_mode = Column(String(255), nullable=True)
+    status = Column(String(40), nullable=False, default="SCHEDULED")
+    completion_notes = Column(Text, nullable=True)
+    scheduled_by = Column(String(100), nullable=False)
+    completed_by = Column(String(100), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    case = relationship("ApprovalCase")
+
+
+class WorkflowPathwayAssignment(Base):
+    """Case-specific configurable routing sequence, separate from statutory decision-making."""
+    __tablename__ = "workflow_pathway_assignments"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    case_id = Column(String(36), ForeignKey("approval_cases.id"), nullable=False, unique=True, index=True)
+    pathway_key = Column(String(80), nullable=False)
+    pathway_name = Column(String(255), nullable=False)
+    stage_sequence = Column(JSON, nullable=False)
+    configured_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
+
+    case = relationship("ApprovalCase")
+
+
+class CommitteeReviewRecord(Base):
+    """Recorded SAC/SHC recommendation; not an AICTE statutory approval."""
+    __tablename__ = "committee_review_records"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False, index=True)
+    case_id = Column(String(36), ForeignKey("approval_cases.id"), nullable=False, index=True)
+    committee_type = Column(String(10), nullable=False)
+    decision = Column(String(40), nullable=False)
+    notes = Column(Text, nullable=False)
+    recorded_by = Column(String(100), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    case = relationship("ApprovalCase")

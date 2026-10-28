@@ -9,6 +9,7 @@ from backend.test_phase_g import run_phase_g_tests
 from backend.test_phase_h import run_phase_h_tests
 from backend.test_phase_i import run_phase_i_tests
 from backend.test_navigation_and_views import run_navigation_tests
+from backend.test_obligations import run_obligation_tests
 
 def main():
     print("=====================================================================")
@@ -39,9 +40,14 @@ def main():
     run_navigation_tests()
     print("\n")
 
+    print(">>> SECTION 7: UNDERTAKINGS, EVC & OPERATIONS <<<")
+    run_obligation_tests()
+    print("\\n")
+
     print("=====================================================================")
-    print("   ALL PHASES (A THROUGH I) VERIFIED 100% OPERATIONAL & COMPLIANT!   ")
+    print("   ALL PHASES PLUS UNDERTAKINGS/EVC TESTS COMPLETED   ")
     print("=====================================================================")
 
 if __name__ == "__main__":
     main()
+

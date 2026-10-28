@@ -8,7 +8,7 @@ from sqlalchemy import or_
 
 from ..database import get_db, Base, engine
 from ..models import (
-    Workspace, ApprovalCase, Alert, Task, EvidenceDocument,
+    Workspace, ApprovalCase, CaseStageHistory, Alert, Task, EvidenceDocument,
     ComplianceResult, NotificationOutbox, AuditEvent
 )
 from .workspace import get_or_create_default_workspace
@@ -201,10 +201,16 @@ def scan_workspace_alerts_logic(db: Session, ws: Workspace) -> Dict[str, int]:
                     existing.severity = sev
                     updated_count += 1
 
-        # 2. Stalled Stage Check (> 14 days in preliminary stage)
-        case_created_dt = case.created_at.date() if isinstance(case.created_at, datetime) else today
-        days_in_current = (today - case_created_dt).days
-        if case.current_stage in ["DRAFT", "INFO_COLLECTION", "CORRECTIONS_REQUIRED"] and days_in_current > 14:
+        # 2. Stalled Stage Check (illustrative 14-day threshold; not an official APH deadline)
+        latest_stage_history = db.query(CaseStageHistory).filter(
+            CaseStageHistory.case_id == case.id,
+            CaseStageHistory.to_stage == case.current_stage
+        ).order_by(CaseStageHistory.changed_at.desc()).first()
+        stage_started = latest_stage_history.changed_at.date() if latest_stage_history else (
+            case.created_at.date() if isinstance(case.created_at, datetime) else today
+        )
+        days_in_current = max(0, (today - stage_started).days)
+        if case.status != "COMPLETED" and days_in_current > 14:
             key = f"ALERT-STALLED-{case.id[:8]}"
             title = f"Workflow Stage Stalled: {case.current_stage} ({days_in_current} Days Inactive)"
             desc = f"Case {case.case_reference} has remained in stage '{case.current_stage}' for {days_in_current} days without progression."

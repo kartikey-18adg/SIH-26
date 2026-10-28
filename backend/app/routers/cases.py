@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import (
     Workspace, ApprovalCase, CaseStageHistory, Institution, 
-    EvidenceDocument, ComplianceResult, Task, Alert, AuditEvent
+    EvidenceDocument, ComplianceResult, Task, Alert, AuditEvent, WorkflowPathwayAssignment, EVCAppointment, CommitteeReviewRecord
 )
 from .workspace import get_or_create_default_workspace
 from ..permissions import get_current_role, check_role_permission, ROLE_PERMISSIONS, normalize_role
@@ -20,9 +20,11 @@ def utc_now() -> datetime:
 # Allowed Stage Transitions Map
 VALID_STAGE_TRANSITIONS: Dict[str, List[str]] = {
     "DRAFT": ["INFO_COLLECTION", "DOCUMENT_REVIEW", "CLOSED"],
-    "INFO_COLLECTION": ["DOCUMENT_REVIEW", "DRAFT"],
-    "DOCUMENT_REVIEW": ["COMPLIANCE_CHECKS", "CORRECTIONS_REQUIRED", "DRAFT"],
+    "INFO_COLLECTION": ["DOCUMENT_REVIEW", "EVC", "DRAFT"],
+    "DOCUMENT_REVIEW": ["COMPLIANCE_CHECKS", "EVC", "CORRECTIONS_REQUIRED", "DRAFT"],
     "COMPLIANCE_CHECKS": ["INTERNAL_REVIEW", "CORRECTIONS_REQUIRED", "DOCUMENT_REVIEW"],
+    "EVC": ["SAC_SHC", "COMPLIANCE_CHECKS", "INTERNAL_REVIEW", "CORRECTIONS_REQUIRED"],
+    "SAC_SHC": ["INTERNAL_REVIEW", "CORRECTIONS_REQUIRED"],
     "INTERNAL_REVIEW": ["READY_FOR_SUBMISSION", "CORRECTIONS_REQUIRED", "COMPLIANCE_CHECKS", "CLOSED"],
     "CORRECTIONS_REQUIRED": ["DOCUMENT_REVIEW", "COMPLIANCE_CHECKS", "INTERNAL_REVIEW"],
     "READY_FOR_SUBMISSION": ["RECORDED_EXTERNALLY_SUBMITTED", "INTERNAL_REVIEW", "CLOSED"],
@@ -36,6 +38,8 @@ STAGE_STATUS_MAPPING: Dict[str, str] = {
     "INFO_COLLECTION": "IN_PROGRESS",
     "DOCUMENT_REVIEW": "IN_PROGRESS",
     "COMPLIANCE_CHECKS": "IN_PROGRESS",
+    "EVC": "AWAITING_REVIEW",
+    "SAC_SHC": "AWAITING_REVIEW",
     "INTERNAL_REVIEW": "AWAITING_REVIEW",
     "CORRECTIONS_REQUIRED": "NEEDS_ATTENTION",
     "READY_FOR_SUBMISSION": "COMPLETED",
@@ -43,6 +47,36 @@ STAGE_STATUS_MAPPING: Dict[str, str] = {
     "EXTERNAL_RESPONSE_RECEIVED": "IN_PROGRESS",
     "CLOSED": "COMPLETED"
 }
+
+
+def _allowed_next_stages(db: Session, case: ApprovalCase) -> List[str]:
+    """Return configured pathway next steps when present, otherwise legacy state-machine steps."""
+    assignment = db.query(WorkflowPathwayAssignment).filter_by(
+        workspace_id=case.workspace_id, case_id=case.id
+    ).first()
+    if not assignment:
+        return VALID_STAGE_TRANSITIONS.get(case.current_stage, [])
+    sequence = assignment.stage_sequence or []
+    current = case.current_stage
+    if current == "CORRECTIONS_REQUIRED":
+        prior = db.query(CaseStageHistory).filter(
+            CaseStageHistory.case_id == case.id,
+            CaseStageHistory.to_stage == "CORRECTIONS_REQUIRED"
+        ).order_by(CaseStageHistory.changed_at.desc()).first()
+        return [prior.from_stage] if prior else []
+    if current not in sequence:
+        return VALID_STAGE_TRANSITIONS.get(current, [])
+    if current == "READY_FOR_SUBMISSION":
+        return ["RECORDED_EXTERNALLY_SUBMITTED", "CLOSED"]
+    if current == "RECORDED_EXTERNALLY_SUBMITTED":
+        return ["EXTERNAL_RESPONSE_RECEIVED", "CLOSED"]
+    if current == "EXTERNAL_RESPONSE_RECEIVED":
+        return ["CLOSED", "CORRECTIONS_REQUIRED"]
+    index = sequence.index(current)
+    result = [sequence[index + 1]] if index + 1 < len(sequence) else []
+    if current not in {"DRAFT", "READY_FOR_SUBMISSION", "CLOSED"}:
+        result.append("CORRECTIONS_REQUIRED")
+    return result
 
 # Pydantic Schemas
 class CaseCreateRequest(BaseModel):
@@ -170,7 +204,7 @@ def list_cases(
             data_mode=c.data_mode,
             created_at=c.created_at,
             updated_at=c.updated_at,
-            allowed_next_stages=VALID_STAGE_TRANSITIONS.get(c.current_stage, []),
+            allowed_next_stages=_allowed_next_stages(db, c),
             stage_history=histories,
             documents_count=len(c.documents),
             compliance_results_count=len(c.compliance_results),
@@ -321,7 +355,8 @@ def get_case_detail(
     ws = get_or_create_default_workspace(db)
     c = db.query(ApprovalCase).filter(
         ApprovalCase.id == case_id,
-        ApprovalCase.workspace_id == ws.id
+        ApprovalCase.workspace_id == ws.id,
+        ApprovalCase.data_mode == ws.active_data_mode
     ).first()
 
     if not c:
@@ -358,7 +393,7 @@ def get_case_detail(
         data_mode=c.data_mode,
         created_at=c.created_at,
         updated_at=c.updated_at,
-        allowed_next_stages=VALID_STAGE_TRANSITIONS.get(c.current_stage, []),
+        allowed_next_stages=_allowed_next_stages(db, c),
         stage_history=histories,
         documents_count=len(c.documents),
         compliance_results_count=len(c.compliance_results),
@@ -403,12 +438,61 @@ def transition_case_stage(
         )
 
     # Validate transition
-    allowed = VALID_STAGE_TRANSITIONS.get(current, [])
+    allowed = _allowed_next_stages(db, c)
     if target not in allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid stage transition from '{current}' to '{target}'. Allowed next stages are: {', '.join(allowed)}"
         )
+
+    # Evidence review is a gate, not an automated statutory decision.
+    if current == "DOCUMENT_REVIEW" and target in {"EVC", "COMPLIANCE_CHECKS"}:
+        pending_docs = db.query(EvidenceDocument).filter(
+            EvidenceDocument.case_id == c.id,
+            EvidenceDocument.review_status.in_(["AWAITING_REVIEW", "NEEDS_CORRECTION"])
+        ).count()
+        if pending_docs:
+            raise HTTPException(status_code=409, detail=f"Workflow gate blocked this transition. Review or correct {pending_docs} evidence document(s) first.")
+
+    # EVC cannot be marked as passed merely by moving the case to the next stage.
+    if current == "EVC" and target in {"SAC_SHC", "COMPLIANCE_CHECKS", "INTERNAL_REVIEW"}:
+        completed_evc = db.query(EVCAppointment).filter(
+            EVCAppointment.case_id == c.id, EVCAppointment.status == "COMPLETED"
+        ).count()
+        if not completed_evc:
+            raise HTTPException(status_code=409, detail="Workflow gate blocked this transition. Record an EVC appointment as completed with notes first.")
+
+    # SAC/SHC review must be recorded before progressing to internal review.
+    if current == "SAC_SHC" and target == "INTERNAL_REVIEW":
+        committee_record = db.query(CommitteeReviewRecord).filter(
+            CommitteeReviewRecord.case_id == c.id
+        ).order_by(CommitteeReviewRecord.created_at.desc()).first()
+        if not committee_record or committee_record.decision != "RECOMMEND":
+            raise HTTPException(status_code=409, detail="Workflow gate blocked this transition. Record an authorized SAC/SHC recommendation before internal review.")
+
+    # Compliance findings must be evaluated and outstanding findings routed for correction.
+    if current == "COMPLIANCE_CHECKS" and target in {"INTERNAL_REVIEW", "READY_FOR_SUBMISSION"}:
+        results = db.query(ComplianceResult).filter(ComplianceResult.case_id == c.id).all()
+        if not results:
+            raise HTTPException(status_code=409, detail="Workflow gate blocked this transition. Run deterministic compliance evaluation first.")
+        unresolved = [r for r in results if r.status in {
+            "NEEDS_REVIEW", "NON_COMPLIANT", "MISSING_EVIDENCE", "EXPIRED_EVIDENCE", "UNABLE_TO_DETERMINE"
+        }]
+        if unresolved:
+            raise HTTPException(status_code=409, detail=f"Workflow gate blocked this transition. Resolve or formally disposition {len(unresolved)} outstanding compliance finding(s) first.")
+
+    # Final readiness requires reviewed evidence and a completed compliance evaluation.
+    if current == "INTERNAL_REVIEW" and target == "READY_FOR_SUBMISSION":
+        pending_docs = db.query(EvidenceDocument).filter(
+            EvidenceDocument.case_id == c.id,
+            EvidenceDocument.review_status.in_(["AWAITING_REVIEW", "NEEDS_CORRECTION"])
+        ).count()
+        results = db.query(ComplianceResult).filter(ComplianceResult.case_id == c.id).all()
+        unresolved = [r for r in results if r.status in {
+            "NEEDS_REVIEW", "NON_COMPLIANT", "MISSING_EVIDENCE", "EXPIRED_EVIDENCE", "UNABLE_TO_DETERMINE"
+        }]
+        if pending_docs or not results or unresolved:
+            raise HTTPException(status_code=409, detail=f"Workflow gate blocked this transition. Pending documents: {pending_docs}; compliance findings requiring disposition: {len(unresolved)}; compliance evaluation recorded: {bool(results)}.")
 
     # Transition logic
     c.current_stage = target

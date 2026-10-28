@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { AppShell } from '../components/AppShell';
 import { MetricCards } from '../components/MetricCards';
@@ -25,7 +26,8 @@ export default function WorkspacePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href="/operations" className="rounded border border-[#C6C4BA] bg-white px-3 py-2 text-xs font-semibold text-[#1E3A8A] hover:bg-[#EDF2F7]">Undertakings & EVC →</Link>
           <span className="text-xs text-[#5E5D57]">
             Academic Cycle: <strong>2025–2026</strong> (APH 2024–27 Norms)
           </span>
