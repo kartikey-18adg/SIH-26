@@ -381,6 +381,16 @@ export async function fetchComplianceQueueApi(params: Record<string, string> = {
 }
 
 // Tasks API calls
+export async function syncTasksApi(): Promise<{ success: boolean; created: number; updated: number }> {
+  const res = await fetch(`${API_BASE}/tasks/sync`, {
+    method: 'POST',
+    headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+    cache: 'no-store'
+  });
+  if (!res.ok) await handleResponseError(res, `Task synchronization failed: HTTP ${res.status}`);
+  return await res.json();
+}
+
 export async function fetchTasksApi(params: Record<string, string> = {}) {
   const query = new URLSearchParams(params).toString();
   const url = query ? `${API_BASE}/tasks?${query}` : `${API_BASE}/tasks`;
