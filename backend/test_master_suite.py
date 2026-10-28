@@ -9,6 +9,7 @@ from backend.test_phase_g import run_phase_g_tests
 from backend.test_phase_h import run_phase_h_tests
 from backend.test_phase_i import run_phase_i_tests
 from backend.test_navigation_and_views import run_navigation_tests
+from backend.test_obligations import run_obligation_tests
 
 def main():
     print("=====================================================================")
@@ -45,3 +46,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Additional lifecycle coverage for time-bound undertakings and EVC operations.
+if __name__ == "__main__":
+    run_obligation_tests()
