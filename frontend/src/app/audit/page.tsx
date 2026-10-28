@@ -3,9 +3,11 @@
 import React, { FormEvent, useCallback, useEffect, useState } from 'react';
 import { AppShell } from '../../components/AppShell';
 import { AuditEvent, AuditFilters, AuditEventResponse, fetchAuditEvents } from '../../services/audit';
+import { fetchCases } from '../../services/api';
 import { AuditAnalyticsPanel } from './AuditAnalyticsPanel';
 
 const PAGE_SIZE = 25;
+type DeadlineCase = { id: string; case_reference: string; institution_name?: string; current_stage?: string; priority?: string; target_date?: string | null; status?: string };
 const fieldClass = 'w-full rounded border border-[#D8D6CD] bg-white px-3 py-2 text-xs text-[#1A1917] outline-none focus:border-[#1E3A8A]';
 
 function formatDate(value: string) {
@@ -21,6 +23,10 @@ function prettyAction(action: string) {
 
 export default function AuditTrailPage() {
   const [data, setData] = useState<AuditEventResponse | null>(null);
+  const [deadlineCases, setDeadlineCases] = useState<DeadlineCase[]>([]);
+  const [expandedDeadlineMonths, setExpandedDeadlineMonths] = useState<Set<string>>(new Set());
+  const [deadlineLoading, setDeadlineLoading] = useState(true);
+  const [deadlineError, setDeadlineError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -44,6 +50,24 @@ export default function AuditTrailPage() {
 
   useEffect(() => { void loadEvents(); }, [loadEvents]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setDeadlineLoading(true);
+    fetchCases()
+      .then((items: DeadlineCase[]) => {
+        if (cancelled) return;
+        const dated = items.filter(item => item.target_date && !Number.isNaN(new Date(item.target_date).getTime()));
+        dated.sort((a, b) => new Date(a.target_date!).getTime() - new Date(b.target_date!).getTime());
+        setDeadlineCases(dated);
+        setDeadlineError('');
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setDeadlineError(err.message || 'Could not load case deadlines.');
+      })
+      .finally(() => { if (!cancelled) setDeadlineLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPage(1);
@@ -61,6 +85,7 @@ export default function AuditTrailPage() {
   return (
     <AppShell>
       <div className="space-y-5">
+      <AuditAnalyticsPanel />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between border-b border-[#E2E0D8] pb-4">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-[#1E3A8A]">
@@ -81,7 +106,7 @@ export default function AuditTrailPage() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {[
           { label: 'Total events in workspace', value: data?.stats.total_events },
-          { label: 'Events today (UTC)', value: data?.stats.today_events },
+          { label: 'Events today', value: data?.stats.today_events },
           { label: 'Distinct actors', value: data?.stats.unique_actors },
         ].map(stat => (
           <div key={stat.label} className="rounded border border-[#E2E0D8] bg-white p-4 shadow-xs">
@@ -90,8 +115,6 @@ export default function AuditTrailPage() {
           </div>
         ))}
       </div>
-
-      <AuditAnalyticsPanel />
 
       <form onSubmit={applyFilters} className="rounded border border-[#E2E0D8] bg-white p-4 shadow-xs">
         <div className="mb-3 flex items-center justify-between">
@@ -141,6 +164,120 @@ export default function AuditTrailPage() {
         </div>
       )}
 
+      <section className="overflow-hidden rounded border border-[#E2E0D8] bg-white shadow-xs">
+        <div className="flex flex-col gap-2 border-b border-[#E2E0D8] bg-[#F7F7F5] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[#1A1917]">Case deadline timeline</h2>
+            <p className="mt-1 text-[10px] text-[#77756C]">Target-date view of cases in the active workspace. Markers show deadlines, not task duration.</p>
+          </div>
+          <span className="text-[10px] text-[#77756C]">{deadlineCases.length.toLocaleString()} cases with target dates</span>
+        </div>
+        {deadlineLoading ? (
+          <div className="p-6 text-center text-xs text-[#5E5D57]">Loading case deadlines…</div>
+        ) : deadlineError ? (
+          <div role="alert" className="p-4 text-xs text-[#8A1E20]">Deadline timeline unavailable: {deadlineError}</div>
+        ) : deadlineCases.length === 0 ? (
+          <div className="p-6 text-center text-xs text-[#5E5D57]">No cases with target dates are available in the active data mode.</div>
+        ) : (() => {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const groups = deadlineCases.reduce<Record<string, DeadlineCase[]>>((acc, item) => {
+            const date = new Date(item.target_date!);
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            (acc[key] ??= []).push(item);
+            return acc;
+          }, {});
+          const months = Object.entries(groups).sort(([a], [b]) => a.localeCompare(b));
+          const toggleMonth = (month: string) => setExpandedDeadlineMonths(previous => {
+            const next = new Set(previous);
+            if (next.has(month)) next.delete(month);
+            else next.add(month);
+            return next;
+          });
+          return (
+            <div className="p-3 sm:p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] text-[#5E5D57]">Choose a month to inspect individual case deadlines.</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setExpandedDeadlineMonths(new Set(months.map(([month]) => month)))} className="rounded border border-[#D8D6CD] px-2.5 py-1.5 text-[10px] font-semibold hover:bg-[#F2F1EC]">Expand all</button>
+                  <button type="button" onClick={() => setExpandedDeadlineMonths(new Set())} className="rounded border border-[#D8D6CD] px-2.5 py-1.5 text-[10px] font-semibold hover:bg-[#F2F1EC]">Collapse all</button>
+                </div>
+              </div>
+              <div className="divide-y divide-[#E2E0D8] rounded border border-[#E2E0D8]">
+                {months.map(([month, items]) => {
+                  const expanded = expandedDeadlineMonths.has(month);
+                  const [year, monthNumber] = month.split('-').map(Number);
+                  const monthLabel = new Date(year, monthNumber - 1, 1).toLocaleDateString([], { month: 'long', year: 'numeric' });
+                  const monthDates = items.map(item => new Date(item.target_date!).getTime());
+                  const minDate = Math.min(...monthDates);
+                  const maxDate = Math.max(...monthDates);
+                  const span = Math.max(maxDate - minDate, 24 * 60 * 60 * 1000);
+                  const ticks = Array.from({ length: 5 }, (_, index) => new Date(minDate + span * index / 4));
+                  return (
+                    <section key={month}>
+                      <button type="button" onClick={() => toggleMonth(month)} aria-expanded={expanded} className="flex w-full items-center justify-between gap-3 bg-[#FBFBF9] px-3 py-3 text-left hover:bg-[#F2F1EC] sm:px-4">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="text-xs text-[#1E3A8A]" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+                          <span className="truncate text-xs font-semibold text-[#1A1917]">{monthLabel}</span>
+                        </span>
+                        <span className="shrink-0 text-[10px] text-[#5E5D57]">{items.length} {items.length === 1 ? 'case' : 'cases'}</span>
+                      </button>
+                      {expanded && (
+                        <div className="border-t border-[#E2E0D8] p-3 sm:p-4">
+                          <div className="mb-2 grid grid-cols-[minmax(110px,1.2fr)_minmax(150px,2fr)] gap-2 text-[10px] font-semibold text-[#77756C] sm:grid-cols-[minmax(180px,1.2fr)_minmax(220px,2fr)] sm:gap-3">
+                            <span>Case / target date</span>
+                            <div className="relative h-6 border-b border-[#D8D6CD]">
+                              {ticks.map((tick, index) => (
+                                <span key={index} className="absolute bottom-1 -translate-x-1/2 whitespace-nowrap" style={{ left: `${index * 25}%` }}>
+                                  {tick.toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="divide-y divide-[#F0EFE9]">
+                            {items.map(item => {
+                              const target = new Date(item.target_date!);
+                              const position = ((target.getTime() - minDate) / span) * 100;
+                              const daysLeft = Math.ceil((new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime() - today.getTime()) / 86400000);
+                              const status = (item.status || item.current_stage || '').toUpperCase();
+                              const isClosed = ['COMPLETED', 'APPROVED', 'REJECTED'].some(value => status.includes(value));
+                              const overdue = daysLeft < 0 && !isClosed;
+                              const priority = (item.priority || '').toUpperCase();
+                              const markerColor = overdue ? '#B42318' : priority === 'CRITICAL' ? '#B42318' : priority === 'HIGH' ? '#C27803' : '#1E3A8A';
+                              return (
+                                <div key={item.id} className="grid grid-cols-[minmax(110px,1.2fr)_minmax(150px,2fr)] items-center gap-2 py-2.5 sm:grid-cols-[minmax(180px,1.2fr)_minmax(220px,2fr)] sm:gap-3">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-[10px] font-semibold text-[#1A1917] sm:text-[11px]" title={item.case_reference}>{item.case_reference}</p>
+                                    <p className="truncate text-[10px] text-[#77756C]" title={item.institution_name}>{item.institution_name || 'Institution unavailable'}</p>
+                                    <p className="mt-0.5 text-[10px] text-[#5E5D57]">{target.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })} · {isClosed ? 'Closed' : daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? 'Due today' : `${daysLeft}d left`}</p>
+                                  </div>
+                                  <div className="relative h-8 rounded bg-[#F7F7F5]">
+                                    <div className="absolute inset-y-0 border-l border-dashed border-[#C6C4BA]" style={{ left: '50%' }} aria-hidden="true" />
+                                    <div className="absolute inset-y-0 flex items-center" style={{ left: `${Math.max(0, Math.min(100, position))}%` }}>
+                                      <span className="h-4 w-1 rounded-full" style={{ backgroundColor: markerColor }} title={`Target date: ${target.toLocaleDateString()}`} />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+              <p className="mt-3 text-[10px] text-[#77756C]">All {deadlineCases.length.toLocaleString()} cases with target dates are grouped by target month. Expand a month to view its deadline markers.</p>
+              <div className="mt-3 flex flex-wrap gap-3 border-t border-[#E2E0D8] pt-3 text-[10px] text-[#5E5D57]">
+                <span className="flex items-center gap-1.5"><span className="h-2.5 w-1 rounded-full bg-[#1E3A8A]" />Upcoming / normal priority</span>
+                <span className="flex items-center gap-1.5"><span className="h-2.5 w-1 rounded-full bg-[#C27803]" />High priority</span>
+                <span className="flex items-center gap-1.5"><span className="h-2.5 w-1 rounded-full bg-[#B42318]" />Critical priority or overdue</span>
+              </div>
+            </div>
+          );
+        })()}
+      </section>
+
       <div className="overflow-hidden rounded border border-[#E2E0D8] bg-white shadow-xs">
         <div className="flex items-center justify-between border-b border-[#E2E0D8] bg-[#F7F7F5] px-4 py-3">
           <div>
@@ -159,56 +296,66 @@ export default function AuditTrailPage() {
           </div>
         ) : data && (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[850px] border-collapse text-left">
-                <thead className="bg-white text-[10px] uppercase tracking-wider text-[#77756C]">
-                  <tr>
-                    <th className="border-b border-[#E2E0D8] px-4 py-3 font-semibold">Timestamp</th>
-                    <th className="border-b border-[#E2E0D8] px-4 py-3 font-semibold">Actor</th>
-                    <th className="border-b border-[#E2E0D8] px-4 py-3 font-semibold">Action</th>
-                    <th className="border-b border-[#E2E0D8] px-4 py-3 font-semibold">Entity</th>
-                    <th className="border-b border-[#E2E0D8] px-4 py-3 font-semibold">Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((item: AuditEvent) => {
-                    const expanded = expandedId === item.id;
-                    return (
-                      <React.Fragment key={item.id}>
-                        <tr className="border-b border-[#F0EFE9] align-top hover:bg-[#FBFBF9]">
-                          <td className="whitespace-nowrap px-4 py-3 text-[11px] text-[#5E5D57]">{formatDate(item.created_at)}</td>
-                          <td className="px-4 py-3">
-                            <div className="text-xs font-semibold text-[#1A1917]">{item.actor_name}</div>
-                            <div className="mt-1 text-[10px] text-[#77756C]">{item.actor_role.replaceAll('_', ' ')}</div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-xs font-semibold text-[#1E3A8A]">{prettyAction(item.action)}</div>
-                            <div className="mt-1 font-mono text-[10px] text-[#77756C]">{item.action}</div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-[11px] font-semibold text-[#1A1917]">{item.entity_type}</div>
-                            <div className="mt-1 max-w-[180px] truncate font-mono text-[10px] text-[#77756C]" title={item.entity_id}>{item.entity_id}</div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <button type="button" onClick={() => setExpandedId(expanded ? null : item.id)} className="rounded border border-[#D8D6CD] px-2.5 py-1 text-[10px] font-semibold hover:bg-[#F2F1EC]">
-                              {expanded ? 'Hide details' : 'View details'}
-                            </button>
-                          </td>
-                        </tr>
-                        {expanded && (
-                          <tr className="border-b border-[#E2E0D8] bg-[#FAF9F5]">
-                            <td colSpan={5} className="px-4 py-4">
-                              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#77756C]">Stored event metadata</p>
-                              <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded border border-[#E2E0D8] bg-white p-3 text-[11px] leading-5 text-[#34332F]">{JSON.stringify(item.details ?? {}, null, 2)}</pre>
-                              <p className="mt-2 break-all font-mono text-[10px] text-[#77756C]">Event ID: {item.id}</p>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="divide-y divide-[#F0EFE9]">
+              {(() => {
+                const groups = data.items.reduce<Record<string, AuditEvent[]>>((acc, item) => {
+                  const parsed = new Date(item.created_at);
+                  const day = Number.isNaN(parsed.getTime()) ? 'Date unavailable' : parsed.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                  (acc[day] ??= []).push(item);
+                  return acc;
+                }, {});
+                return Object.entries(groups).map(([day, events]) => (
+                  <section key={day} aria-label={day}>
+                    <div className="sticky top-0 border-b border-[#E2E0D8] bg-[#F7F7F5] px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-[#77756C]">{day}</div>
+                    <div className="divide-y divide-[#F0EFE9]">
+                      {events.map(item => {
+                        const expanded = expandedId === item.id;
+                        const isCase = item.entity_type === 'CASE';
+                        return (
+                          <article key={item.id} className="px-4 py-4 transition-colors hover:bg-[#FBFBF9] sm:px-5">
+                            <div className="flex gap-3">
+                              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#DCE5F8] bg-[#F2F6FF] text-[#1E3A8A]">
+                                <span aria-hidden="true" className="text-sm">{isCase ? '↗' : item.entity_type === 'WORKSPACE' ? '⚙' : item.entity_type === 'ALERT' ? '!' : '•'}</span>
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold text-[#1A1917]">{prettyAction(item.action)}</p>
+                                    <p className="mt-1 text-[11px] leading-5 text-[#5E5D57]">
+                                      <span className="font-semibold text-[#34332F]">{item.actor_name}</span>
+                                      <span> · {item.actor_role.replaceAll('_', ' ')}</span>
+                                    </p>
+                                  </div>
+                                  <time dateTime={item.created_at} className="shrink-0 text-[10px] tabular-nums text-[#77756C]">
+                                    {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </time>
+                                </div>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <span className="rounded-md border border-[#DCE5F8] bg-[#F5F7FC] px-2 py-1 text-[10px] font-semibold text-[#274782]">{item.entity_type}</span>
+                                  <span className="max-w-full truncate font-mono text-[10px] text-[#77756C]" title={item.entity_id}>{item.entity_id}</span>
+                                  <button type="button" onClick={() => setExpandedId(expanded ? null : item.id)} aria-expanded={expanded} className="ml-auto rounded-md border border-[#D8D6CD] px-2.5 py-1 text-[10px] font-semibold text-[#34332F] hover:bg-[#F2F1EC]">
+                                    {expanded ? 'Hide details' : 'View details'}
+                                  </button>
+                                </div>
+                                {expanded && (
+                                  <div className="mt-3 rounded-lg border border-[#E2E0D8] bg-[#FAF9F5] p-3">
+                                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                      <p className="text-[10px] font-bold uppercase tracking-wider text-[#77756C]">Event details</p>
+                                      <p className="font-mono text-[10px] text-[#77756C]">ID: {item.id}</p>
+                                    </div>
+                                    <pre className="overflow-x-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-[#34332F]">{JSON.stringify(item.details ?? {}, null, 2)}</pre>
+                                    <p className="mt-2 break-all font-mono text-[10px] text-[#77756C]">Action code: {item.action}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ));
+              })()}
             </div>
             <div className="flex flex-col gap-2 border-t border-[#E2E0D8] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-[11px] text-[#5E5D57]">Page {page} of {totalPages}</p>
