@@ -83,7 +83,7 @@ export default function ComplianceOperationsPage() {
             Track time-bound obligations, submit existing vault evidence for independent verification, schedule Expert Visit Committee activity, and monitor deadline risks. Notifications in this prototype are simulated.
           </p>
         </div>
-        <button className={button} disabled={busy} onClick={() => act(() => api('/obligations/scan', { method: 'POST' }), 'Deadline scan completed. Alerts are recorded in the alert centre.')}>Scan deadlines</button>
+        <div className="flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={() => act(() => api('/obligations/scan', { method: 'POST' }), 'Obligation deadline scan completed.')}>Scan obligations</button><button className={button} disabled={busy} onClick={() => act(() => api('/evc/scan', { method: 'POST' }), 'EVC reminder and overdue scan completed.')}>Scan EVC reminders</button></div>
       </div>
 
       {error && <div role="alert" className="mb-3 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
