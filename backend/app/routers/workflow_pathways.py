@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import ApprovalCase, WorkflowPathwayAssignment, AuditEvent
+from ..models import ApprovalCase, WorkflowPathwayAssignment, CommitteeReviewRecord, AuditEvent
 from ..permissions import get_current_role, check_role_permission
 from .workspace import get_or_create_default_workspace
 
@@ -118,3 +118,58 @@ def assign_case_pathway(
     db.commit()
     return {"assigned": True, "case_id": case.id, "pathway_key": key,
             "pathway_name": name, "stages": stages, "configured_by": assignment.configured_by}
+
+
+class CommitteeReviewRequest(BaseModel):
+    committee_type: str = Field(..., description="SAC or SHC")
+    decision: str = Field(..., description="RECOMMEND, RETURN_FOR_CORRECTION, or NOT_RECOMMEND")
+    notes: str = Field(..., min_length=4)
+    recorded_by: str = Field(..., min_length=2)
+
+@router.get("/cases/{case_id}/committee-reviews")
+def list_committee_reviews(case_id: str, db: Session = Depends(get_db)):
+    ws = get_or_create_default_workspace(db)
+    case = _case(db, ws, case_id)
+    rows = db.query(CommitteeReviewRecord).filter_by(
+        workspace_id=ws.id, case_id=case.id
+    ).order_by(CommitteeReviewRecord.created_at.desc()).all()
+    return [{
+        "id": row.id, "case_id": row.case_id, "committee_type": row.committee_type,
+        "decision": row.decision, "notes": row.notes, "recorded_by": row.recorded_by,
+        "created_at": row.created_at
+    } for row in rows]
+
+@router.post("/cases/{case_id}/committee-reviews")
+def record_committee_review(
+    case_id: str, req: CommitteeReviewRequest, db: Session = Depends(get_db),
+    role: str = Depends(get_current_role)
+):
+    check_role_permission(role, ["Reviewer", "Compliance Officer", "Administrator"], "recording SAC/SHC committee review")
+    ws = get_or_create_default_workspace(db)
+    case = _case(db, ws, case_id)
+    if case.current_stage != "SAC_SHC":
+        raise HTTPException(status_code=409, detail="Committee review records can only be entered while the case is at the SAC/SHC stage.")
+    committee_type = req.committee_type.upper()
+    decision = req.decision.upper()
+    if committee_type not in {"SAC", "SHC"}:
+        raise HTTPException(status_code=400, detail="committee_type must be SAC or SHC.")
+    if decision not in {"RECOMMEND", "RETURN_FOR_CORRECTION", "NOT_RECOMMEND"}:
+        raise HTTPException(status_code=400, detail="Unsupported committee recommendation.")
+    row = CommitteeReviewRecord(
+        workspace_id=ws.id, case_id=case.id, committee_type=committee_type,
+        decision=decision, notes=req.notes.strip(), recorded_by=req.recorded_by.strip()
+    )
+    db.add(row)
+    db.flush()
+    db.add(AuditEvent(
+        workspace_id=ws.id, actor_name=req.recorded_by.strip(),
+        actor_role=role.upper().replace(" ", "_"), entity_type="COMMITTEE_REVIEW",
+        entity_id=row.id, action="COMMITTEE_REVIEW_RECORDED",
+        details_json={"case_reference": case.case_reference, "committee_type": committee_type,
+                      "decision": decision, "notes": req.notes.strip()}
+    ))
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "case_id": row.case_id, "committee_type": row.committee_type,
+            "decision": row.decision, "notes": row.notes, "recorded_by": row.recorded_by,
+            "created_at": row.created_at}
