@@ -43,6 +43,7 @@ def _mode_scoped_audit_query(db: Session, ws):
             (
                 ((AuditEvent.entity_type == "CASE") & AuditEvent.entity_id.in_(imported_case_ids))
                 | ((AuditEvent.entity_type == "INGESTION_BATCH") & AuditEvent.entity_id.in_(imported_batch_ids))
+                | ((AuditEvent.entity_type == "EVC_VISIT") & AuditEvent.details_json["case_id"].as_string().in_(imported_case_ids))
                 | ((AuditEvent.entity_type == "WORKSPACE") & (AuditEvent.action == "IMPORTED_DATA_REMOVED"))
             ),
         )
@@ -51,10 +52,17 @@ def _mode_scoped_audit_query(db: Session, ws):
         synthetic_flag = func.coalesce(
             AuditEvent.details_json["synthetic_demo_event"].as_boolean(), False
         )
+        active_case_ids = db.query(ApprovalCase.id).filter(
+            ApprovalCase.workspace_id == ws.id,
+            ApprovalCase.data_mode == mode,
+        )
         query = query.filter(
             AuditEvent.actor_name != "Demo Activity Simulator",
             synthetic_flag.is_(False),
-            AuditEvent.entity_type == "WORKSPACE",
+            (
+                (AuditEvent.entity_type == "WORKSPACE")
+                | ((AuditEvent.entity_type == "EVC_VISIT") & AuditEvent.details_json["case_id"].as_string().in_(active_case_ids))
+            ),
         )
     else:
         # DEMO mode includes the clearly-labelled synthetic activity used for demos.
