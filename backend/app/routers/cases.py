@@ -386,7 +386,7 @@ def get_case_detail(
         data_mode=c.data_mode,
         created_at=c.created_at,
         updated_at=c.updated_at,
-        allowed_next_stages=VALID_STAGE_TRANSITIONS.get(c.current_stage, []),
+        allowed_next_stages=_allowed_next_stages(db, c),
         stage_history=histories,
         documents_count=len(c.documents),
         compliance_results_count=len(c.compliance_results),
